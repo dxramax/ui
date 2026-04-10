@@ -1,0 +1,157 @@
+private function runtime_ui_dispatch_wrapper_target(): string {
+  return "runtime_ui_apply_dispatch_wrapper";
+}
+
+private function runtime_ui_build_dispatch_wrapper_event(
+  event: Json?,
+  original_handler: string
+): Json {
+  let normalized_event = event ?? {};
+  normalized_event["original_handler"] = original_handler;
+  return normalized_event;
+}
+
+private function runtime_ui_resolve_dispatch_target(
+  context: RuntimeUiApplyExecutionContext
+): string {
+  let dispatch_target = Runtime.json_to_str(context.dispatch_target);
+  if (dispatch_target != "") {
+    return dispatch_target;
+  }
+
+  if (context.handler != "") {
+    return context.handler;
+  }
+
+  return "";
+}
+
+private function runtime_ui_attach_execution_binding(
+  event: Json?,
+  context: RuntimeUiApplyExecutionContext
+): Json {
+  let normalized_event = event ?? {};
+  if (context is null) {
+    return normalized_event;
+  }
+  if (Runtime.json_to_str(context.binding_type) == "") {
+    return normalized_event;
+  }
+
+  normalized_event["binding"] = {
+    "type": context.binding_type,
+    "kind": context.binding_kind,
+    "key_fields": context.binding_key_fields ?? [],
+    "state": context.binding_state ?? context.form_state
+  };
+  return normalized_event;
+}
+
+private function runtime_ui_handler_reference_is_resolved(handler_symbol: string): bool {
+  return runtime_ui_resolve_handler_reference_status(handler_symbol) == "resolved";
+}
+
+private function runtime_ui_dispatch_result_json_is_valid(result_json: Json): bool {
+  if (result_json == null) {
+    return true;
+  }
+
+  if (result_json["handled"] != true) {
+    return true;
+  }
+
+  return result_json["form_state"] != null
+    && (result_json["binding_state"] == null || Runtime.json_to_str(result_json["binding_state"]) != "")
+    && result_json["messages"] != null
+    && result_json["effects"] != null
+    && (result_json["navigation"] == null || Runtime.json_to_str(result_json["navigation"]) != "")
+    && (
+      result_json["transfer_payload"] == null
+      || Runtime.json_to_str(result_json["transfer_payload"]) != ""
+    );
+}
+
+private function runtime_ui_dispatch_result_json_to_struct(
+  result_json: Json
+): RuntimeUiApplyExecutionResult? {
+  if (result_json == null) {
+    return null;
+  }
+
+  let result = Runtime.json_parse("{}");
+  result["handled"] = result_json["handled"] == true;
+  result["form_state"] = result_json["form_state"];
+  result["binding_state"] = result_json["binding_state"];
+  result["messages"] = result_json["messages"];
+  result["effects"] = result_json["effects"];
+  result["navigation"] = result_json["navigation"];
+  result["transfer_payload"] = result_json["transfer_payload"];
+  return result;
+}
+
+public function runtime_ui_apply_dispatch_wrapper(
+  dispatch_target_symbol: string,
+  original_handler_symbol: string,
+  session_id: string,
+  form_instance_id: string,
+  app_id: string,
+  form_id: string,
+  control_id: string,
+  event_name: string,
+  revision: int,
+  form_state: Json,
+  binding_state: Json?,
+  handler_input: Json?,
+  event: Json?
+): Json {
+  let wrapped_event = runtime_ui_build_dispatch_wrapper_event(
+    event,
+    original_handler_symbol
+  );
+  return {
+    "handled": true,
+    "form_state": form_state ?? {},
+    "binding_state": binding_state ?? wrapped_event["binding"]["state"],
+    "messages": [],
+    "effects": [],
+    "navigation": null,
+    "transfer_payload": null
+  };
+}
+
+public function runtime_ui_dispatch_handler(
+  context: RuntimeUiApplyExecutionContext
+): RuntimeUiApplyExecutionResult? {
+  if (context is null) {
+    return null;
+  }
+
+  let dispatch_target = runtime_ui_resolve_dispatch_target(context);
+  let dispatch_event = runtime_ui_attach_execution_binding(context.event, context);
+  if (dispatch_target == runtime_ui_dispatch_wrapper_target()) {
+    dispatch_event = runtime_ui_build_dispatch_wrapper_event(
+      dispatch_event,
+      context.handler
+    );
+  }
+
+  let result_json = ui_dispatch.dispatch_handler(
+    dispatch_target,
+    context.handler,
+    context.session_id,
+    context.form_instance_id,
+    context.app_id,
+    context.form_id,
+    context.control_id,
+    context.event_name,
+    Runtime.json_to_i64(context.revision),
+    context.form_state,
+    context.binding_state,
+    context.handler_input,
+    dispatch_event
+  );
+  if (!runtime_ui_dispatch_result_json_is_valid(result_json)) {
+    raise runtime_ui_dispatch_result_contract_invalid;
+  }
+  return runtime_ui_dispatch_result_json_to_struct(result_json);
+}

@@ -1,0 +1,4 @@
+.nezam/
+package.tgz
+*.tgz
+node_modules/

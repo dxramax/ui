@@ -1,0 +1,14 @@
+struct RuntimeObject {
+  type_name: string;
+  object_kind: string;
+  members: Json?;
+  state: Json?;
+}
+
+struct RuntimeObjectInspection {
+  type_name: string;
+  object_kind: string;
+  member_count: int;
+  has_members: bool;
+  has_state: bool;
+}

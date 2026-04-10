@@ -1,0 +1,847 @@
+// ============================================================================
+// Module: Runtime UI
+// File:   runtime_ui.messages.bl
+// Purpose: Message catalog for runtime UI apply-pipeline validation failures.
+// ============================================================================
+
+// Raised when a runtime-ui apply event omits the control identifier needed
+// to resolve the reflected control runtime context.
+message runtime_ui_apply_event_control_id_required {
+    code: "BUI-UI-0001";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI apply event is missing the control identifier";
+    };
+}
+
+// Raised when a runtime-ui apply event omits the handler symbol needed for
+// explicit execution pipeline validation.
+message runtime_ui_apply_event_handler_required {
+    code: "BUI-UI-0002";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI apply event is missing the handler symbol";
+    };
+}
+
+// Raised when a runtime-ui apply event omits the event name.
+message runtime_ui_apply_event_name_required {
+    code: "BUI-UI-0003";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI apply event is missing the event name";
+    };
+}
+
+// Raised when a runtime-ui apply event references a control session that does
+// not exist for the current form instance.
+message runtime_ui_apply_event_control_session_not_found {
+    code: "BUI-UI-0004";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI apply control session was not found";
+    };
+}
+
+// Raised when a runtime-ui apply event references control metadata that is not
+// reflected in the current form design.
+message runtime_ui_apply_event_control_metadata_not_found {
+    code: "BUI-UI-0005";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI apply control metadata was not found";
+    };
+}
+
+// Raised when a reflected form load handler requires a canonical key-driven
+// input value but the current open/runtime state does not provide it.
+message runtime_ui_form_load_key_input_required {
+    code: "BUI-UI-0006";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI form load is missing the required key input";
+    };
+}
+
+// Raised when a requested runtime-ui app identifier is not reflected in the
+// current canonical UI catalog.
+message runtime_ui_app_not_found {
+    code: "BUI-UI-0007";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI app was not found";
+    };
+}
+
+// Raised when an open-form request omits the required app identifier.
+message runtime_ui_open_form_app_id_required {
+    code: "BUI-UI-0008";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI open form is missing the app identifier";
+    };
+}
+
+// Raised when an open-form request omits the required form identifier.
+message runtime_ui_open_form_form_id_required {
+    code: "BUI-UI-0009";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI open form is missing the form identifier";
+    };
+}
+
+// Raised when a requested runtime-ui form identifier is not reflected in the
+// target app design.
+message runtime_ui_form_not_found {
+    code: "BUI-UI-0010";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI form was not found";
+    };
+}
+
+// Raised when the runtime cannot create or persist the canonical app session
+// state needed for an open-form request.
+message runtime_ui_open_form_app_session_persist_failed {
+    code: "BUI-UI-0011";
+    severity: error;
+    category: processing;
+    message: {
+        en: "Runtime UI failed to persist the app session during form open";
+    };
+}
+
+// Raised when the runtime cannot create or persist the canonical form session
+// state needed for an open-form request.
+message runtime_ui_open_form_form_session_persist_failed {
+    code: "BUI-UI-0012";
+    severity: error;
+    category: processing;
+    message: {
+        en: "Runtime UI failed to persist the form session during form open";
+    };
+}
+
+// Raised when the runtime cannot materialize the reflected control-session
+// state for a form-open request.
+message runtime_ui_open_form_control_sessions_persist_failed {
+    code: "BUI-UI-0013";
+    severity: error;
+    category: processing;
+    message: {
+        en: "Runtime UI failed to persist control sessions during form open";
+    };
+}
+
+// Raised when the runtime cannot execute the reflected form-load handler
+// during initial form open.
+message runtime_ui_open_form_load_handler_failed {
+    code: "BUI-UI-0014";
+    severity: error;
+    category: processing;
+    message: {
+        en: "Runtime UI failed to execute the form load handler";
+    };
+}
+
+// Raised when a reflected form-load handler symbol does not resolve to a
+// source declaration before dispatch is attempted.
+message runtime_ui_open_form_load_handler_not_found {
+    code: "BUI-UI-0068";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI form load handler was not found";
+    };
+}
+
+// Raised when a reflected form-load handler symbol resolves to a declaration
+// kind that the canonical UI runtime cannot dispatch.
+message runtime_ui_open_form_load_handler_unsupported_declaration_kind {
+    code: "BUI-UI-0070";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI form load handler declaration kind is not supported";
+    };
+}
+
+// Raised when a reflected form-load handler symbol resolves to a callable
+// whose lowered return contract is not valid for runtime-ui dispatch.
+message runtime_ui_open_form_load_handler_invalid_return_contract {
+    code: "BUI-UI-0071";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI form load handler return contract is invalid";
+    };
+}
+
+// Raised when the runtime cannot sync canonical control runtime state during
+// the open-form pipeline.
+message runtime_ui_open_form_control_state_sync_failed {
+    code: "BUI-UI-0015";
+    severity: error;
+    category: processing;
+    message: {
+        en: "Runtime UI failed to sync control runtime state during form open";
+    };
+}
+
+// Raised when the runtime cannot compare-and-save the canonical app session
+// during the open-form pipeline.
+message runtime_ui_open_form_app_session_compare_and_save_failed {
+    code: "BUI-UI-0016";
+    severity: error;
+    category: processing;
+    message: {
+        en: "Runtime UI failed to compare and save the app session during form open";
+    };
+}
+
+// Raised when the runtime cannot atomically persist the full open-form session
+// bundle after the initial form state is prepared.
+message runtime_ui_open_form_atomic_persist_failed {
+    code: "BUI-UI-0017";
+    severity: error;
+    category: processing;
+    message: {
+        en: "Runtime UI failed to persist the atomic session bundle during form open";
+    };
+}
+
+// Raised when a runtime-ui apply request omits the canonical session
+// identifier needed to resolve persisted session state.
+message runtime_ui_apply_session_id_required {
+    code: "BUI-UI-0018";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI apply is missing the session identifier";
+    };
+}
+
+// Raised when a runtime-ui apply request omits the canonical form instance
+// identifier needed to resolve persisted form state.
+message runtime_ui_apply_form_instance_id_required {
+    code: "BUI-UI-0019";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI apply is missing the form instance identifier";
+    };
+}
+
+// Raised when a runtime-ui apply request omits the canonical optimistic
+// revision needed for atomic session updates.
+message runtime_ui_apply_revision_required {
+    code: "BUI-UI-0020";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI apply is missing the required revision";
+    };
+}
+
+// Raised when a runtime-ui apply request omits the canonical state-sync
+// payload needed to update form state.
+message runtime_ui_apply_state_sync_required {
+    code: "BUI-UI-0021";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI apply is missing the state sync payload";
+    };
+}
+
+// Raised when a runtime-ui apply request omits the canonical form state from
+// the state-sync payload.
+message runtime_ui_apply_state_sync_form_required {
+    code: "BUI-UI-0022";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI apply is missing the state sync form payload";
+    };
+}
+
+// Raised when a runtime-ui apply request references an app session that is not
+// persisted for the supplied session identifier.
+message runtime_ui_apply_app_session_not_found {
+    code: "BUI-UI-0023";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI apply app session was not found";
+    };
+}
+
+// Raised when a runtime-ui apply request references a form session that is not
+// persisted for the supplied form instance identifier.
+message runtime_ui_apply_form_session_not_found {
+    code: "BUI-UI-0024";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI apply form session was not found";
+    };
+}
+
+// Raised when the supplied session context does not match the persisted app
+// and form session ownership.
+message runtime_ui_apply_session_context_mismatch {
+    code: "BUI-UI-0025";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI apply session context does not match the persisted session";
+    };
+}
+
+// Raised when the canonical app metadata for the persisted form session cannot
+// be resolved from reflection.
+message runtime_ui_apply_app_metadata_not_found {
+    code: "BUI-UI-0026";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI apply app metadata was not found";
+    };
+}
+
+// Raised when the canonical form metadata for the persisted form session
+// cannot be resolved from reflection.
+message runtime_ui_apply_form_metadata_not_found {
+    code: "BUI-UI-0027";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI apply form metadata was not found";
+    };
+}
+
+// Raised when the runtime cannot materialize the reflected control-session
+// state for an apply request.
+message runtime_ui_apply_control_sessions_persist_failed {
+    code: "BUI-UI-0028";
+    severity: error;
+    category: processing;
+    message: {
+        en: "Runtime UI failed to persist control sessions during apply";
+    };
+}
+
+// Raised when the runtime cannot sync canonical control runtime state during
+// the apply pipeline.
+message runtime_ui_apply_control_state_sync_failed {
+    code: "BUI-UI-0029";
+    severity: error;
+    category: processing;
+    message: {
+        en: "Runtime UI failed to sync control runtime state during apply";
+    };
+}
+
+// Raised when the runtime cannot dispatch the reflected apply handler for the
+// current event context.
+message runtime_ui_apply_dispatch_failed {
+    code: "BUI-UI-0030";
+    severity: error;
+    category: processing;
+    message: {
+        en: "Runtime UI failed to dispatch the apply handler";
+    };
+}
+
+// Raised when the runtime cannot resync canonical control runtime state after
+// a handler execution updates the form state.
+message runtime_ui_apply_executed_control_state_sync_failed {
+    code: "BUI-UI-0031";
+    severity: error;
+    category: processing;
+    message: {
+        en: "Runtime UI failed to sync executed control runtime state during apply";
+    };
+}
+
+// Raised when the runtime cannot atomically persist the full apply-session
+// bundle after the next state is prepared.
+message runtime_ui_apply_atomic_persist_failed {
+    code: "BUI-UI-0032";
+    severity: error;
+    category: processing;
+    message: {
+        en: "Runtime UI failed to persist the atomic session bundle during apply";
+    };
+}
+
+// Raised when a guarded apply request includes an invalid object-guard target
+// payload and the runtime cannot determine the canonical guarded object.
+message runtime_ui_apply_object_guard_target_invalid {
+    code: "BUI-UI-0032A";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI apply received an invalid object guard target";
+    };
+}
+
+// Raised when a guarded apply request attempts mutation without an active
+// object guard owned by the current session/form context.
+message runtime_ui_apply_object_guard_required {
+    code: "BUI-UI-0032B";
+    severity: error;
+    category: processing;
+    message: {
+        en: "Runtime UI apply requires an active object guard before mutation";
+    };
+}
+
+// Raised when a guarded apply request attempts mutation while another owner
+// holds the object guard for the same canonical business object.
+message runtime_ui_apply_object_guard_held_by_other {
+    code: "BUI-UI-0032C";
+    severity: error;
+    category: processing;
+    message: {
+        en: "Runtime UI apply cannot mutate because another owner holds the object guard";
+    };
+}
+
+// Raised when a runtime-ui lookup request omits the canonical session
+// identifier needed to resolve persisted session state.
+message runtime_ui_lookup_session_id_required {
+    code: "BUI-UI-0033";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI lookup is missing the session identifier";
+    };
+}
+
+// Raised when a runtime-ui lookup request omits the canonical form instance
+// identifier needed to resolve persisted form state.
+message runtime_ui_lookup_form_instance_id_required {
+    code: "BUI-UI-0034";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI lookup is missing the form instance identifier";
+    };
+}
+
+// Raised when a runtime-ui lookup request omits the optimistic revision needed
+// for session validation.
+message runtime_ui_lookup_revision_required {
+    code: "BUI-UI-0035";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI lookup is missing the required revision";
+    };
+}
+
+// Raised when a runtime-ui lookup request references an app session that is
+// not persisted for the supplied session identifier.
+message runtime_ui_lookup_app_session_not_found {
+    code: "BUI-UI-0036";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI lookup app session was not found";
+    };
+}
+
+// Raised when a runtime-ui lookup request references a form session that is
+// not persisted for the supplied form instance identifier.
+message runtime_ui_lookup_form_session_not_found {
+    code: "BUI-UI-0037";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI lookup form session was not found";
+    };
+}
+
+// Raised when a runtime-ui lookup request targets a form session that is not
+// owned by the supplied session identifier.
+message runtime_ui_lookup_session_ownership_mismatch {
+    code: "BUI-UI-0038";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI lookup session does not own the form session";
+    };
+}
+
+// Raised when the supplied lookup session context does not match the persisted
+// app and form session ownership.
+message runtime_ui_lookup_session_context_mismatch {
+    code: "BUI-UI-0039";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI lookup session context does not match the persisted session";
+    };
+}
+
+// Raised when a lookup request revision does not match the persisted app/form
+// session revision.
+message runtime_ui_lookup_revision_mismatch {
+    code: "BUI-UI-0040";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI lookup revision does not match the persisted session";
+    };
+}
+
+// Raised when an explicit lookup app identifier conflicts with the persisted
+// form session app ownership.
+message runtime_ui_lookup_app_id_mismatch {
+    code: "BUI-UI-0041";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI lookup app identifier does not match the persisted session";
+    };
+}
+
+// Raised when an explicit lookup form identifier conflicts with the persisted
+// form session form ownership.
+message runtime_ui_lookup_form_id_mismatch {
+    code: "BUI-UI-0042";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI lookup form identifier does not match the persisted session";
+    };
+}
+
+// Raised when the canonical app metadata for a persisted lookup session cannot
+// be resolved from reflection.
+message runtime_ui_lookup_app_metadata_not_found {
+    code: "BUI-UI-0043";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI lookup app metadata was not found";
+    };
+}
+
+// Raised when the canonical form metadata for a persisted lookup session
+// cannot be resolved from reflection.
+message runtime_ui_lookup_form_metadata_not_found {
+    code: "BUI-UI-0044";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI lookup form metadata was not found";
+    };
+}
+
+// Raised when a lookup request references a control session that is not
+// persisted for the supplied form instance.
+message runtime_ui_lookup_control_session_not_found {
+    code: "BUI-UI-0045";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI lookup control session was not found";
+    };
+}
+
+// Raised when a lookup request references control metadata that is not
+// reflected in the current form design.
+message runtime_ui_lookup_control_metadata_not_found {
+    code: "BUI-UI-0046";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI lookup control metadata was not found";
+    };
+}
+
+// Raised when a lookup request cannot resolve the required backing table from
+// control metadata or explicit request input.
+message runtime_ui_lookup_table_required {
+    code: "BUI-UI-0047";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI lookup is missing the required lookup table";
+    };
+}
+
+// Raised when the runtime cannot persist refreshed session context during a
+// lookup request.
+message runtime_ui_lookup_session_context_persist_failed {
+    code: "BUI-UI-0048";
+    severity: error;
+    category: processing;
+    message: {
+        en: "Runtime UI failed to persist the session context during lookup";
+    };
+}
+
+// Raised when a runtime-ui export request omits the canonical session
+// identifier needed to resolve persisted session state.
+message runtime_ui_export_session_id_required {
+    code: "BUI-UI-0049";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI export is missing the session identifier";
+    };
+}
+
+// Raised when a runtime-ui export request omits the canonical form instance
+// identifier needed to resolve persisted form state.
+message runtime_ui_export_form_instance_id_required {
+    code: "BUI-UI-0050";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI export is missing the form instance identifier";
+    };
+}
+
+// Raised when a runtime-ui export request omits the optimistic revision needed
+// for session validation.
+message runtime_ui_export_revision_required {
+    code: "BUI-UI-0051";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI export is missing the required revision";
+    };
+}
+
+// Raised when a runtime-ui export request omits the required export format.
+message runtime_ui_export_format_required {
+    code: "BUI-UI-0052";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI export is missing the required format";
+    };
+}
+
+// Raised when a runtime-ui export request asks for an unsupported format.
+message runtime_ui_export_format_unsupported {
+    code: "BUI-UI-0053";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI export format is unsupported";
+    };
+}
+
+// Raised when a runtime-ui export request references an app session that is
+// not persisted for the supplied session identifier.
+message runtime_ui_export_app_session_not_found {
+    code: "BUI-UI-0054";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI export app session was not found";
+    };
+}
+
+// Raised when a runtime-ui export request references a form session that is
+// not persisted for the supplied form instance identifier.
+message runtime_ui_export_form_session_not_found {
+    code: "BUI-UI-0055";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI export form session was not found";
+    };
+}
+
+// Raised when a runtime-ui export request targets a form session that is not
+// owned by the supplied session identifier.
+message runtime_ui_export_session_ownership_mismatch {
+    code: "BUI-UI-0056";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI export session does not own the form session";
+    };
+}
+
+// Raised when the supplied export session context does not match the persisted
+// app and form session ownership.
+message runtime_ui_export_session_context_mismatch {
+    code: "BUI-UI-0057";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI export session context does not match the persisted session";
+    };
+}
+
+// Raised when an export request revision does not match the persisted app/form
+// session revision.
+message runtime_ui_export_revision_mismatch {
+    code: "BUI-UI-0058";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI export revision does not match the persisted session";
+    };
+}
+
+// Raised when an explicit export app identifier conflicts with the persisted
+// form session app ownership.
+message runtime_ui_export_app_id_mismatch {
+    code: "BUI-UI-0059";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI export app identifier does not match the persisted session";
+    };
+}
+
+// Raised when an explicit export form identifier conflicts with the persisted
+// form session form ownership.
+message runtime_ui_export_form_id_mismatch {
+    code: "BUI-UI-0060";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI export form identifier does not match the persisted session";
+    };
+}
+
+// Raised when the canonical app metadata for a persisted export session cannot
+// be resolved from reflection.
+message runtime_ui_export_app_metadata_not_found {
+    code: "BUI-UI-0061";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI export app metadata was not found";
+    };
+}
+
+// Raised when the canonical form metadata for a persisted export session
+// cannot be resolved from reflection.
+message runtime_ui_export_form_metadata_not_found {
+    code: "BUI-UI-0062";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI export form metadata was not found";
+    };
+}
+
+// Raised when an export request references a control session that is not
+// persisted for the supplied form instance.
+message runtime_ui_export_control_session_not_found {
+    code: "BUI-UI-0063";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI export control session was not found";
+    };
+}
+
+// Raised when an export request references control metadata that is not
+// reflected in the current form design.
+message runtime_ui_export_control_metadata_not_found {
+    code: "BUI-UI-0064";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI export control metadata was not found";
+    };
+}
+
+// Raised when the runtime cannot persist refreshed session context during an
+// export request.
+message runtime_ui_export_session_context_persist_failed {
+    code: "BUI-UI-0065";
+    severity: error;
+    category: processing;
+    message: {
+        en: "Runtime UI failed to persist the session context during export";
+    };
+}
+
+// Raised when an explicit apply app identifier conflicts with the persisted
+// session ownership.
+message runtime_ui_apply_app_id_mismatch {
+    code: "BUI-UI-0066";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI apply app identifier does not match the persisted session";
+    };
+}
+
+// Raised when an explicit apply form identifier conflicts with the persisted
+// session ownership.
+message runtime_ui_apply_form_id_mismatch {
+    code: "BUI-UI-0067";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI apply form identifier does not match the persisted session";
+    };
+}
+
+// Raised when a reflected apply-event handler symbol does not resolve to a
+// source declaration before dispatch is attempted.
+message runtime_ui_apply_event_handler_not_found {
+    code: "BUI-UI-0069";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI apply event handler was not found";
+    };
+}
+
+// Raised when a reflected apply-event handler symbol resolves to a
+// declaration kind that the canonical UI runtime cannot dispatch.
+message runtime_ui_apply_event_handler_unsupported_declaration_kind {
+    code: "BUI-UI-0072";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI apply event handler declaration kind is not supported";
+    };
+}
+
+// Raised when a reflected apply-event handler symbol resolves to a callable
+// whose lowered return contract is not valid for runtime-ui dispatch.
+message runtime_ui_apply_event_handler_invalid_return_contract {
+    code: "BUI-UI-0073";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI apply event handler return contract is invalid";
+    };
+}
+
+// Raised when a lowered runtime UI dispatch result does not satisfy the
+// canonical apply/load contract expected by the runtime.
+message runtime_ui_dispatch_result_contract_invalid {
+    code: "BUI-UI-0074";
+    severity: error;
+    category: validation;
+    message: {
+        en: "Runtime UI dispatch result does not satisfy the canonical contract";
+    };
+}

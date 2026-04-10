@@ -1,0 +1,43 @@
+class ObjectGuardTarget {
+    object_type: string;
+    object_key: string;
+    object_label: string?;
+}
+
+class ObjectGuardOwnerContext {
+    session_id: string;
+    form_instance_id: string?;
+    user_id: string?;
+    tenant_id: string?;
+}
+
+class ObjectGuardAcquireRequest {
+    target: ObjectGuardTarget;
+    owner: ObjectGuardOwnerContext;
+    ttl_seconds: int?;
+    guard_mode: string?;
+}
+
+class ObjectGuardReleaseRequest {
+    target: ObjectGuardTarget;
+    owner: ObjectGuardOwnerContext;
+}
+
+class ObjectGuardRefreshRequest {
+    target: ObjectGuardTarget;
+    owner: ObjectGuardOwnerContext;
+    ttl_seconds: int?;
+}
+
+class ObjectGuardResult {
+    ok: bool;
+    code: string?;
+    message: string?;
+    object_type: string?;
+    object_key: string?;
+    owner_session_id: string?;
+    owner_form_instance_id: string?;
+    owner_user_id: string?;
+    owner_tenant_id: string?;
+    expires_at: string?;
+}

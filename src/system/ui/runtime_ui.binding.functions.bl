@@ -1,0 +1,1155 @@
+private function runtime_ui_find_binding_declaration_node(binding_type: string): Json {
+  let normalized_binding_type = Runtime.json_to_str(binding_type);
+  if (normalized_binding_type == "") {
+    return null;
+  }
+
+  let table_declaration = runtime_ui_find_named_declaration_node_by_kind(
+    "tableDeclaration",
+    normalized_binding_type
+  );
+  if (table_declaration != null) {
+    return table_declaration;
+  }
+
+  return runtime_ui_find_named_declaration_node_by_kind(
+    "classDeclaration",
+    normalized_binding_type
+  );
+}
+
+private function runtime_ui_resolve_binding_declaration_kind(binding_type: string): string {
+  let binding_declaration = runtime_ui_find_binding_declaration_node(binding_type);
+  if (binding_declaration == null) {
+    return "";
+  }
+
+  let declaration_kind = Runtime.json_to_str(binding_declaration["kind"]);
+  if (declaration_kind == "tableDeclaration") {
+    return "table";
+  }
+  if (declaration_kind == "classDeclaration") {
+    return "class";
+  }
+
+  return declaration_kind;
+}
+
+private function runtime_ui_find_inherited_binding_type_for_declaration(
+  binding_declaration: Json
+): string {
+  if (binding_declaration == null) {
+    return "";
+  }
+
+  let declaration_kind = Runtime.json_to_str(binding_declaration["kind"]);
+  let declaration_node_id = runtime_ui_resolve_ast_node_id(binding_declaration);
+  let inheritance_kind = "";
+  if (declaration_kind == "tableDeclaration") {
+    inheritance_kind = "tableInheritance";
+  } else if (declaration_kind == "classDeclaration") {
+    inheritance_kind = "classInheritance";
+  } else {
+    return "";
+  }
+
+  let inheritance_node_id = runtime_ui_find_child_node_id_by_kind(
+    declaration_node_id,
+    inheritance_kind
+  );
+  if (inheritance_node_id == "") {
+    return "";
+  }
+
+  return runtime_ui_find_first_descendant_symbol_name(inheritance_node_id);
+}
+
+private function runtime_ui_build_binding_member_type(type_expression_node_id: string): Json {
+  return runtime_ui_analyze_binding_member_type_expression(type_expression_node_id)["member_type"];
+}
+
+private function runtime_ui_find_first_descendant_node_id_by_kind(
+  node_id: string,
+  expected_kind: string
+): string {
+  let normalized_node_id = Runtime.json_to_str(node_id);
+  let normalized_expected_kind = Runtime.json_to_str(expected_kind);
+  if (normalized_node_id == "" || normalized_expected_kind == "") {
+    return "";
+  }
+
+  let node_json = ast.node_to_json(normalized_node_id);
+  if (runtime_ui_node_kind(node_json) == normalized_expected_kind) {
+    return normalized_node_id;
+  }
+
+  for (child_node_id in runtime_ui_list_child_node_ids(normalized_node_id)) {
+    let matching_child_node_id = runtime_ui_find_first_descendant_node_id_by_kind(
+      Runtime.json_to_str(child_node_id),
+      normalized_expected_kind
+    );
+    if (matching_child_node_id != "") {
+      return matching_child_node_id;
+    }
+  }
+
+  return "";
+}
+
+private function runtime_ui_resolve_type_expression_builtin_value_type(
+  type_expression_node_id: string
+): string {
+  let normalized_type_expression_node_id = Runtime.json_to_str(type_expression_node_id);
+  if (normalized_type_expression_node_id == "") {
+    return "";
+  }
+
+  let builtin_type_node_id = runtime_ui_find_first_descendant_node_id_by_kind(
+    normalized_type_expression_node_id,
+    "builtinType"
+  );
+  if (builtin_type_node_id == "") {
+    return "";
+  }
+
+  let builtin_type_node_json = ast.node_to_json(builtin_type_node_id);
+  let literal_text = Runtime.json_to_str(runtime_ui_property_value(builtin_type_node_json, "literal_text"));
+  if (literal_text != "") {
+    return literal_text;
+  }
+
+  let source_text = Runtime.json_to_str(runtime_ui_property_value(builtin_type_node_json, "source_text"));
+  if (source_text != "") {
+    return source_text;
+  }
+
+  let original_source_text = Runtime.json_to_str(
+    runtime_ui_property_value(builtin_type_node_json, "original_source_text")
+  );
+  if (original_source_text != "") {
+    return original_source_text;
+  }
+
+  return runtime_ui_find_first_descendant_literal_text(builtin_type_node_id);
+}
+
+private function runtime_ui_analyze_binding_member_type_expression(
+  type_expression_node_id: string
+): Json {
+  let normalized_type_expression_node_id = Runtime.json_to_str(type_expression_node_id);
+  if (normalized_type_expression_node_id == "") {
+    return {
+      "member_type": null,
+      "value_type": "",
+      "numeric_properties": {}
+    };
+  }
+
+  let builtin_type_node_id = runtime_ui_find_first_descendant_node_id_by_kind(
+    normalized_type_expression_node_id,
+    "builtinType"
+  );
+  let builtin_value_type = "";
+  if (builtin_type_node_id != "") {
+    let builtin_type_node_json = ast.node_to_json(builtin_type_node_id);
+    builtin_value_type = Runtime.json_to_str(
+      runtime_ui_property_value(builtin_type_node_json, "literal_text")
+    );
+    if (builtin_value_type == "") {
+      builtin_value_type = Runtime.json_to_str(
+        runtime_ui_property_value(builtin_type_node_json, "source_text")
+      );
+    }
+    if (builtin_value_type == "") {
+      builtin_value_type = Runtime.json_to_str(
+        runtime_ui_property_value(builtin_type_node_json, "original_source_text")
+      );
+    }
+    if (builtin_value_type == "") {
+      builtin_value_type = runtime_ui_find_first_descendant_literal_text(builtin_type_node_id);
+    }
+  }
+
+  let type_symbol = runtime_ui_find_first_descendant_symbol_name(
+    normalized_type_expression_node_id
+  );
+  let member_type = type_symbol != "" ? {
+    "kind": "reference",
+    "symbol_name": type_symbol
+  } : (
+    builtin_type_node_id != "" ? {
+      "kind": "builtin",
+      "symbol_name": null
+    } : {
+      "kind": "unknown",
+      "symbol_name": null
+    }
+  );
+
+  let value_type = builtin_value_type != "" ? builtin_value_type : type_symbol;
+  if (value_type == "") {
+    value_type = Runtime.json_to_str(
+      runtime_ui_find_first_descendant_literal_text(normalized_type_expression_node_id)
+    );
+  }
+  if (value_type == "") {
+    let type_expression_node_json = ast.node_to_json(normalized_type_expression_node_id);
+    value_type = Runtime.json_to_str(
+      runtime_ui_property_value(type_expression_node_json, "source_text")
+    );
+    if (value_type == "") {
+      value_type = Runtime.json_to_str(
+        runtime_ui_property_value(type_expression_node_json, "original_source_text")
+      );
+    }
+  }
+
+  let numeric_properties: Json = {};
+  if (builtin_value_type == "string" || builtin_value_type == "text") {
+    let max_length = runtime_ui_find_first_descendant_positive_int_literal_value(
+      normalized_type_expression_node_id
+    );
+    if (max_length != null) {
+      numeric_properties["max_length"] = max_length;
+    }
+  }
+
+  return {
+    "member_type": member_type,
+    "value_type": value_type,
+    "numeric_properties": numeric_properties
+  };
+}
+
+private function runtime_ui_find_first_descendant_positive_int_literal_value(node_id: string): Json {
+  let normalized_node_id = Runtime.json_to_str(node_id);
+  if (normalized_node_id == "") {
+    return null;
+  }
+
+  let node_json = ast.node_to_json(normalized_node_id);
+  let node_kind = runtime_ui_node_kind(node_json);
+  if (
+    node_kind == "numericLiteral"
+    || node_kind == "integerLiteral"
+    || node_kind == "literal"
+    || node_kind == "typeLiteralParameters"
+    || node_kind == "typeSuffix"
+    || node_kind == "typeSuffixList"
+  ) {
+    let literal_text = Runtime.json_to_str(runtime_ui_property_value(node_json, "literal_text"));
+    let source_text = Runtime.json_to_str(runtime_ui_property_value(node_json, "source_text"));
+    let original_source_text = Runtime.json_to_str(
+      runtime_ui_property_value(node_json, "original_source_text")
+    );
+    let numeric_value = Runtime.json_to_i64(
+      literal_text != "" ? literal_text : (
+        source_text != "" ? source_text : original_source_text
+      )
+    );
+    if (numeric_value > 0) {
+      return Runtime.json_from_i64(numeric_value);
+    }
+  }
+
+  for (child_node_id in runtime_ui_list_child_node_ids(normalized_node_id)) {
+    let child_numeric_value = runtime_ui_find_first_descendant_positive_int_literal_value(
+      Runtime.json_to_str(child_node_id)
+    );
+    if (child_numeric_value != null) {
+      return child_numeric_value;
+    }
+  }
+
+  return null;
+}
+
+private function runtime_ui_collect_binding_member_type_numeric_properties(
+  type_expression_node_id: string
+): Json {
+  return runtime_ui_analyze_binding_member_type_expression(type_expression_node_id)[
+    "numeric_properties"
+  ] ?? {};
+}
+
+private function runtime_ui_default_binding_member_display_length(value_type: string): Json {
+  let normalized_value_type = Runtime.json_to_str(value_type);
+  if (normalized_value_type == "date") {
+    return Runtime.json_from_i64(10);
+  }
+  if (normalized_value_type == "time") {
+    return Runtime.json_from_i64(8);
+  }
+  if (normalized_value_type == "datetime" || normalized_value_type == "timestamp") {
+    return Runtime.json_from_i64(19);
+  }
+  if (
+    normalized_value_type == "bool"
+    || normalized_value_type == "boolean"
+    || normalized_value_type == "toggle"
+    || normalized_value_type == "checkbox"
+  ) {
+    return Runtime.json_from_i64(5);
+  }
+  if (
+    normalized_value_type == "byte"
+    || normalized_value_type == "short"
+    || normalized_value_type == "int"
+    || normalized_value_type == "integer"
+    || normalized_value_type == "long"
+    || normalized_value_type == "uint"
+    || normalized_value_type == "ulong"
+    || normalized_value_type == "float"
+    || normalized_value_type == "double"
+    || normalized_value_type == "decimal"
+    || normalized_value_type == "number"
+    || normalized_value_type == "numeric"
+    || normalized_value_type == "currency"
+  ) {
+    return Runtime.json_from_i64(14);
+  }
+  return Runtime.json_from_i64(32);
+}
+
+private function runtime_ui_cap_binding_member_display_length(
+  candidate_display_length: Json,
+  max_length: Json
+): Json {
+  let normalized_candidate = Runtime.json_to_i64(candidate_display_length);
+  let normalized_max_length = Runtime.json_to_i64(max_length);
+  let display_length_cap = 64;
+  if (normalized_candidate <= 0) {
+    return null;
+  }
+  if (normalized_max_length > 0 && normalized_candidate > normalized_max_length) {
+    normalized_candidate = normalized_max_length;
+  }
+  if (normalized_candidate > display_length_cap) {
+    normalized_candidate = display_length_cap;
+  }
+  return Runtime.json_from_i64(normalized_candidate);
+}
+
+private function runtime_ui_resolve_binding_member_display_length(
+  value_type: string,
+  explicit_display_length: Json,
+  max_length: Json
+): Json {
+  let resolved_max_length = Runtime.json_to_i64(max_length);
+  let capped_explicit_display_length = runtime_ui_cap_binding_member_display_length(
+    explicit_display_length,
+    resolved_max_length > 0 ? Runtime.json_from_i64(resolved_max_length) : null
+  );
+  if (capped_explicit_display_length != null) {
+    return capped_explicit_display_length;
+  }
+
+  if (resolved_max_length > 0) {
+    let resolved_max_length_json = Runtime.json_from_i64(resolved_max_length);
+    return runtime_ui_cap_binding_member_display_length(
+      resolved_max_length_json,
+      resolved_max_length_json
+    );
+  }
+
+  return runtime_ui_default_binding_member_display_length(value_type);
+}
+
+private function runtime_ui_resolve_binding_member_value_type(type_expression_node_id: string): string {
+  return Runtime.json_to_str(
+    runtime_ui_analyze_binding_member_type_expression(type_expression_node_id)["value_type"]
+  );
+}
+
+private function runtime_ui_resolve_binding_member_positive_int_value(
+  field_declaration_node_id: string,
+  property_name: string
+): Json {
+  let normalized_field_declaration_node_id = Runtime.json_to_str(field_declaration_node_id);
+  let normalized_property_name = Runtime.json_to_str(property_name);
+  if (normalized_field_declaration_node_id == "" || normalized_property_name == "") {
+    return null;
+  }
+
+  let property_value = runtime_ui_find_descendant_property_value(
+    normalized_field_declaration_node_id,
+    normalized_property_name
+  );
+  if (property_value == null) {
+    return null;
+  }
+
+  let numeric_value = Runtime.json_to_i64(property_value);
+  if (numeric_value > 0) {
+    return numeric_value;
+  }
+
+  return null;
+}
+
+private function runtime_ui_collect_binding_member_numeric_properties(
+  field_declaration_node_id: string
+): Json {
+  let normalized_field_declaration_node_id = Runtime.json_to_str(field_declaration_node_id);
+  let numeric_properties: Json = {};
+  let property_names: Json = [
+    "max_length",
+    "display_length",
+    "input_width"
+  ];
+  if (normalized_field_declaration_node_id == "") {
+    return numeric_properties;
+  }
+
+  let field_declaration_node_json = ast.node_to_json(normalized_field_declaration_node_id);
+  for (property_name in property_names) {
+    let normalized_property_name = Runtime.json_to_str(property_name);
+    let direct_property_value = runtime_ui_property_value(
+      field_declaration_node_json,
+      normalized_property_name
+    );
+    let direct_numeric_value = Runtime.json_to_i64(direct_property_value);
+    if (direct_numeric_value > 0) {
+      numeric_properties[normalized_property_name] = direct_numeric_value;
+    }
+  }
+
+  for (child_node_id in runtime_ui_list_child_node_ids(normalized_field_declaration_node_id)) {
+    let child_numeric_properties = runtime_ui_collect_binding_member_numeric_properties(
+      Runtime.json_to_str(child_node_id)
+    );
+    for (property_name in property_names) {
+      let normalized_property_name = Runtime.json_to_str(property_name);
+      if (numeric_properties[normalized_property_name] != null) {
+        continue;
+      }
+      let child_property_value = child_numeric_properties[normalized_property_name];
+      if (child_property_value != null) {
+        numeric_properties[normalized_property_name] = child_property_value;
+      }
+    }
+  }
+
+  return numeric_properties;
+}
+
+private function runtime_ui_json_is_true(value: Json): bool {
+  if (value == true) {
+    return true;
+  }
+
+  let normalized_value = Runtime.json_to_str(value);
+  return normalized_value == "true" || normalized_value == "1";
+}
+
+private function runtime_ui_field_modifier_subtree_contains_name(
+  node_id: string,
+  expected_modifier_name: string
+): bool {
+  let normalized_node_id = Runtime.json_to_str(node_id);
+  let normalized_expected_modifier_name = Runtime.json_to_str(expected_modifier_name);
+  if (normalized_node_id == "" || normalized_expected_modifier_name == "") {
+    return false;
+  }
+
+  let node_json = ast.node_to_json(normalized_node_id);
+  let modifier_literal_text = Runtime.json_to_str(
+    runtime_ui_property_value(node_json, "literal_text")
+  );
+  if (modifier_literal_text == normalized_expected_modifier_name) {
+    return true;
+  }
+
+  let modifier_source_text = Runtime.json_to_str(
+    runtime_ui_property_value(node_json, "source_text")
+  );
+  if (modifier_source_text == normalized_expected_modifier_name) {
+    return true;
+  }
+
+  let modifier_original_source_text = Runtime.json_to_str(
+    runtime_ui_property_value(node_json, "original_source_text")
+  );
+  if (modifier_original_source_text == normalized_expected_modifier_name) {
+    return true;
+  }
+
+  if (runtime_ui_node_kind(node_json) == "fieldModifier") {
+    let modifier_descendant_literal_text = Runtime.json_to_str(
+      runtime_ui_find_first_descendant_literal_text(normalized_node_id)
+    );
+    if (modifier_descendant_literal_text == normalized_expected_modifier_name) {
+      return true;
+    }
+
+    let modifier_symbol_name = runtime_ui_find_first_descendant_symbol_name(normalized_node_id);
+    if (modifier_symbol_name == normalized_expected_modifier_name) {
+      return true;
+    }
+  }
+
+  for (child_node_id in runtime_ui_list_child_node_ids(normalized_node_id)) {
+    if (runtime_ui_field_modifier_subtree_contains_name(
+      Runtime.json_to_str(child_node_id),
+      normalized_expected_modifier_name
+    )) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+private function runtime_ui_field_declaration_has_modifier(
+  field_declaration_node_id: string,
+  expected_modifier_name: string
+): bool {
+  return runtime_ui_field_modifier_subtree_contains_name(
+    field_declaration_node_id,
+    expected_modifier_name
+  );
+}
+
+private function runtime_ui_find_descendant_property_value(
+  node_id: string,
+  key: string
+): Json {
+  let normalized_node_id = Runtime.json_to_str(node_id);
+  let normalized_key = Runtime.json_to_str(key);
+  if (normalized_node_id == "" || normalized_key == "") {
+    return null;
+  }
+
+  let node_json = ast.node_to_json(normalized_node_id);
+  let direct_value = runtime_ui_property_value(node_json, normalized_key);
+  if (direct_value != null) {
+    return direct_value;
+  }
+
+  for (child_node_id in runtime_ui_list_child_node_ids(normalized_node_id)) {
+    let descendant_value = runtime_ui_find_descendant_property_value(
+      Runtime.json_to_str(child_node_id),
+      normalized_key
+    );
+    if (descendant_value != null) {
+      return descendant_value;
+    }
+  }
+
+  return null;
+}
+
+private function runtime_ui_apply_binding_member_reflection(
+  node_id: string,
+  property_names: Json,
+  reflection: Json
+): Json {
+  let normalized_node_id = Runtime.json_to_str(node_id);
+  if (normalized_node_id == "") {
+    return reflection;
+  }
+
+  let node_json = ast.node_to_json(normalized_node_id);
+  let node_kind = runtime_ui_node_kind(node_json);
+
+  for (property_name in property_names ?? []) {
+    let normalized_property_name = Runtime.json_to_str(property_name);
+    if (normalized_property_name == "") {
+      continue;
+    }
+    if (reflection["numeric_properties"][normalized_property_name] != null) {
+      continue;
+    }
+
+    let direct_numeric_value = Runtime.json_to_i64(
+      runtime_ui_property_value(node_json, normalized_property_name)
+    );
+    if (direct_numeric_value > 0) {
+      reflection["numeric_properties"][normalized_property_name] = direct_numeric_value;
+    }
+  }
+
+  if (node_kind == "fieldModifier") {
+    let modifier_literal_text = Runtime.json_to_str(
+      runtime_ui_property_value(node_json, "literal_text")
+    );
+    let modifier_source_text = Runtime.json_to_str(
+      runtime_ui_property_value(node_json, "source_text")
+    );
+    let modifier_original_source_text = Runtime.json_to_str(
+      runtime_ui_property_value(node_json, "original_source_text")
+    );
+    let modifier_descendant_literal_text = Runtime.json_to_str(
+      runtime_ui_find_first_descendant_literal_text(normalized_node_id)
+    );
+    let modifier_symbol_name = runtime_ui_find_first_descendant_symbol_name(normalized_node_id);
+    let modifier_name = modifier_literal_text != "" ? modifier_literal_text : (
+      modifier_source_text != "" ? modifier_source_text : (
+        modifier_original_source_text != "" ? modifier_original_source_text : (
+          modifier_descendant_literal_text != "" ? modifier_descendant_literal_text : modifier_symbol_name
+        )
+      )
+    );
+    if (modifier_name == "primary") {
+      reflection["has_primary_modifier"] = true;
+    } else if (modifier_name == "key") {
+      reflection["has_key_modifier"] = true;
+    } else if (modifier_name == "unique") {
+      reflection["has_unique_modifier"] = true;
+    }
+  }
+
+  if (reflection["primary_key_property"] == null) {
+    let primary_key_property = runtime_ui_property_value(node_json, "primary_key");
+    if (primary_key_property != null) {
+      reflection["primary_key_property"] = primary_key_property;
+    }
+  }
+  if (reflection["key_property"] == null) {
+    let key_property = runtime_ui_property_value(node_json, "key");
+    if (key_property != null) {
+      reflection["key_property"] = key_property;
+    }
+  }
+  if (reflection["unique_property"] == null) {
+    let unique_property = runtime_ui_property_value(node_json, "unique");
+    if (unique_property != null) {
+      reflection["unique_property"] = unique_property;
+    }
+  }
+
+  if (node_kind == "typeExpression") {
+    return reflection;
+  }
+
+  for (child_node_id in runtime_ui_list_child_node_ids(normalized_node_id)) {
+    runtime_ui_apply_binding_member_reflection(
+      Runtime.json_to_str(child_node_id),
+      property_names,
+      reflection
+    );
+  }
+
+  return reflection;
+}
+
+private function runtime_ui_collect_binding_member_reflection(
+  node_id: string,
+  property_names: Json
+): Json {
+  let normalized_node_id = Runtime.json_to_str(node_id);
+  let reflection: Json = {
+    "numeric_properties": {},
+    "has_primary_modifier": false,
+    "has_key_modifier": false,
+    "has_unique_modifier": false,
+    "primary_key_property": null,
+    "key_property": null,
+    "unique_property": null
+  };
+  if (normalized_node_id == "") {
+    return reflection;
+  }
+  return runtime_ui_apply_binding_member_reflection(
+    normalized_node_id,
+    property_names,
+    reflection
+  );
+}
+
+private function runtime_ui_resolve_binding_member_key_metadata(
+  field_declaration_node_id: string
+): Json {
+  let normalized_field_declaration_node_id = Runtime.json_to_str(field_declaration_node_id);
+  if (normalized_field_declaration_node_id == "") {
+    return {
+      "is_key": false,
+      "is_primary_key": false,
+      "is_unique": false
+    };
+  }
+  let reflection = runtime_ui_collect_binding_member_reflection(
+    normalized_field_declaration_node_id,
+    []
+  );
+  let is_primary_key = reflection["has_primary_modifier"] == true
+    || runtime_ui_json_is_true(reflection["primary_key_property"]);
+  let is_key = is_primary_key
+    || reflection["has_key_modifier"] == true
+    || runtime_ui_json_is_true(reflection["key_property"]);
+  let is_unique = is_key
+    || reflection["has_unique_modifier"] == true
+    || runtime_ui_json_is_true(reflection["unique_property"]);
+
+  return {
+    "is_key": is_key,
+    "is_primary_key": is_primary_key,
+    "is_unique": is_unique
+  };
+}
+
+private function runtime_ui_build_binding_members_for_type(binding_type: string): Json {
+  let binding_members: Json = {};
+  let normalized_binding_type = Runtime.json_to_str(binding_type);
+  let binding_declaration = runtime_ui_find_binding_declaration_node(normalized_binding_type);
+  if (binding_declaration == null) {
+    return binding_members;
+  }
+
+  let declaration_node_id = runtime_ui_resolve_ast_node_id(binding_declaration);
+  let declaration_kind = Runtime.json_to_str(binding_declaration["kind"]);
+  let binding_kind = runtime_ui_resolve_binding_declaration_kind(normalized_binding_type);
+  let member_list_kind = "";
+  let member_kind = "";
+  let field_declaration_kind = "";
+
+  if (declaration_kind == "tableDeclaration") {
+    member_list_kind = "tableMemberList";
+    member_kind = "tableMember";
+    field_declaration_kind = "tableFieldDeclaration";
+  } else if (declaration_kind == "classDeclaration") {
+    member_list_kind = "classMemberList";
+    member_kind = "classMember";
+    field_declaration_kind = "businessFieldDeclaration";
+  } else {
+    return binding_members;
+  }
+
+  let inherited_binding_type = runtime_ui_find_inherited_binding_type_for_declaration(
+    binding_declaration
+  );
+  if (inherited_binding_type != "" && inherited_binding_type != normalized_binding_type) {
+    let inherited_binding_members = runtime_ui_build_binding_members_for_type(inherited_binding_type);
+    for (inherited_binding_member in inherited_binding_members) {
+      let inherited_member_name = Runtime.json_to_str(inherited_binding_member["field_name"]);
+      if (inherited_member_name == "") {
+        continue;
+      }
+      binding_members[inherited_member_name] = inherited_binding_member;
+    }
+  }
+
+  let member_list_node_id = runtime_ui_find_child_node_id_by_kind(
+    declaration_node_id,
+    member_list_kind
+  );
+  if (member_list_node_id == "") {
+    return binding_members;
+  }
+
+  let member_nodes = ast.list_children(member_list_node_id) ?? [];
+  for (member_node in member_nodes) {
+    if (Runtime.json_to_str(member_node["kind_name"]) != member_kind) {
+      continue;
+    }
+
+    let member_node_id = Runtime.json_to_str(member_node["node_id"]);
+    let field_declaration_node_id = runtime_ui_find_child_node_id_by_kind(
+      member_node_id,
+      field_declaration_kind
+    );
+    if (field_declaration_node_id == "") {
+      continue;
+    }
+
+    let member_name = runtime_ui_find_first_descendant_symbol_name(field_declaration_node_id);
+    if (member_name == "") {
+      continue;
+    }
+
+    let type_expression_node_id = runtime_ui_find_child_node_id_by_kind(
+      field_declaration_node_id,
+      "typeExpression"
+    );
+    let type_analysis = runtime_ui_analyze_binding_member_type_expression(
+      type_expression_node_id
+    );
+    let value_type = Runtime.json_to_str(type_analysis["value_type"]);
+    let reflected_field_properties = runtime_ui_collect_binding_member_reflection(
+      field_declaration_node_id,
+      [
+        "max_length",
+        "display_length",
+        "input_width"
+      ]
+    );
+    let explicit_numeric_properties = reflected_field_properties["numeric_properties"] ?? {};
+    let type_numeric_properties = type_analysis["numeric_properties"] ?? {};
+    let max_length = explicit_numeric_properties["max_length"] != null
+      ? explicit_numeric_properties["max_length"]
+      : type_numeric_properties["max_length"];
+    let display_length = runtime_ui_resolve_binding_member_display_length(
+      value_type,
+      explicit_numeric_properties["display_length"],
+      max_length
+    );
+    let is_primary_key = reflected_field_properties["has_primary_modifier"] == true
+      || runtime_ui_json_is_true(reflected_field_properties["primary_key_property"]);
+    let is_key = is_primary_key
+      || reflected_field_properties["has_key_modifier"] == true
+      || runtime_ui_json_is_true(reflected_field_properties["key_property"]);
+    let is_unique = is_key
+      || reflected_field_properties["has_unique_modifier"] == true
+      || runtime_ui_json_is_true(reflected_field_properties["unique_property"]);
+    binding_members[member_name] = {
+      "kind": "binding_member",
+      "field_name": member_name,
+      "binding_type": normalized_binding_type,
+      "binding_kind": binding_kind,
+      "declaration_kind": declaration_kind,
+      "member_declaration_kind": field_declaration_kind,
+      "member_type": type_analysis["member_type"],
+      "value_type": value_type != "" ? value_type : null,
+      "max_length": max_length,
+      "display_length": display_length,
+      "input_width": explicit_numeric_properties["input_width"],
+      "is_key": is_key,
+      "is_primary_key": is_primary_key,
+      "is_unique": is_unique
+    };
+  }
+
+  return binding_members;
+}
+
+private function runtime_ui_build_binding_members(form_metadata: Json): Json {
+  if (form_metadata != null && form_metadata["binding_members"] != null) {
+    return form_metadata["binding_members"];
+  }
+
+  return runtime_ui_build_binding_members_for_type(
+    runtime_ui_resolve_form_binding_type(form_metadata)
+  );
+}
+
+private function runtime_ui_build_grid_column_metadata_from_binding_member(
+  binding_member: Json
+): Json {
+  let field_name = Runtime.json_to_str(binding_member["field_name"]);
+  let value_type = Runtime.json_to_str(binding_member["value_type"]);
+  if (field_name == "") {
+    return null;
+  }
+
+  let column_metadata: Json = {
+    "id": field_name,
+    "key": field_name,
+    "field": field_name,
+    "name": field_name,
+    "label": field_name,
+    "keyIdentifier": binding_member["is_key"] == true
+  };
+  if (value_type != "") {
+    column_metadata["type"] = value_type;
+    column_metadata["value_type"] = value_type;
+  }
+  if (binding_member["max_length"] != null) {
+    column_metadata["max_length"] = binding_member["max_length"];
+  }
+  if (binding_member["display_length"] != null) {
+    column_metadata["display_length"] = runtime_ui_cap_grid_column_display_length(
+      binding_member["display_length"]
+    );
+  }
+  if (binding_member["input_width"] != null) {
+    column_metadata["input_width"] = binding_member["input_width"];
+  }
+
+  return column_metadata;
+}
+
+private function runtime_ui_resolve_grid_selection_key_from_columns_and_members(
+  columns: Json,
+  binding_members: Json
+): string {
+  let primary_selection_key = "";
+  let fallback_selection_key = "";
+  let key_field_count = 0;
+
+  for (column_metadata in columns ?? []) {
+    let field_name = Runtime.json_to_str(column_metadata["field"]);
+    if (field_name == "") {
+      continue;
+    }
+    let binding_member = binding_members[field_name];
+    if (binding_member == null) {
+      continue;
+    }
+
+    if (binding_member["is_primary_key"] == true) {
+      if (primary_selection_key != "") {
+        primary_selection_key = "";
+        key_field_count = 2;
+      } else if (key_field_count < 2) {
+        primary_selection_key = field_name;
+        key_field_count = 1;
+      }
+      continue;
+    }
+    if (binding_member["is_key"] == true && primary_selection_key == "") {
+      if (fallback_selection_key != "") {
+        fallback_selection_key = "";
+        key_field_count = 2;
+      } else if (key_field_count < 2) {
+        fallback_selection_key = field_name;
+        key_field_count = 1;
+      }
+    }
+  }
+
+  if (primary_selection_key != "") {
+    return primary_selection_key;
+  }
+  if (key_field_count == 1) {
+    return fallback_selection_key;
+  }
+
+  return "";
+}
+
+private function runtime_ui_build_grid_binding_projection_for_type(
+  binding_type: string
+): Json {
+  let binding_members = runtime_ui_build_binding_members_for_type(binding_type);
+  let columns: Json = [];
+  let column_count = 0;
+
+  for (binding_member in binding_members ?? {}) {
+    let column_metadata = runtime_ui_build_grid_column_metadata_from_binding_member(
+      binding_member
+    );
+    if (column_metadata == null) {
+      continue;
+    }
+    columns[column_count] = column_metadata;
+    column_count = column_count + 1;
+  }
+
+  return {
+    "columns": columns,
+    "selection_key": runtime_ui_resolve_grid_selection_key_from_columns_and_members(
+      columns,
+      binding_members
+    )
+  };
+}
+
+private function runtime_ui_build_binding_key_fields_from_members(binding_members: Json): Json {
+  let primary_key_fields: Json = [];
+  let primary_key_count = 0;
+  let key_fields: Json = [];
+  let key_count = 0;
+
+  for (binding_member in binding_members) {
+    let field_name = Runtime.json_to_str(binding_member["field_name"]);
+    if (field_name == "") {
+      continue;
+    }
+
+    if (binding_member["is_primary_key"] == true) {
+      primary_key_fields[primary_key_count] = field_name;
+      primary_key_count = primary_key_count + 1;
+      continue;
+    }
+    if (binding_member["is_key"] == true) {
+      key_fields[key_count] = field_name;
+      key_count = key_count + 1;
+    }
+  }
+
+  if (primary_key_count > 0) {
+    return primary_key_fields;
+  }
+
+  return key_fields;
+}
+
+private function runtime_ui_build_binding_key_fields(form_metadata: Json): Json {
+  if (form_metadata != null && form_metadata["binding_key_fields"] != null) {
+    return form_metadata["binding_key_fields"];
+  }
+
+  return runtime_ui_build_binding_key_fields_from_members(
+    runtime_ui_build_binding_members(form_metadata)
+  );
+}
+
+private function runtime_ui_resolve_single_binding_key_field_name(form_metadata: Json): string {
+  let binding_key_fields = runtime_ui_build_binding_key_fields(form_metadata);
+  let key_field_name = "";
+  let key_field_count = 0;
+
+  for (binding_key_field in binding_key_fields) {
+    let normalized_key_field_name = Runtime.json_to_str(binding_key_field);
+    if (normalized_key_field_name == "") {
+      continue;
+    }
+    key_field_name = normalized_key_field_name;
+    key_field_count = key_field_count + 1;
+    if (key_field_count > 1) {
+      return "";
+    }
+  }
+
+  return key_field_name;
+}
+
+private function runtime_ui_binding_has_key_fields(form_metadata: Json): bool {
+  let binding_key_fields = runtime_ui_build_binding_key_fields(form_metadata);
+  for (binding_key_field in binding_key_fields) {
+    if (Runtime.json_to_str(binding_key_field) != "") {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+private function runtime_ui_resolve_form_binding_kind(form_metadata: Json): string {
+  if (form_metadata != null) {
+    let cached_binding_kind = Runtime.json_to_str(form_metadata["binding_kind"]);
+    if (cached_binding_kind != "") {
+      return cached_binding_kind;
+    }
+  }
+
+  return runtime_ui_resolve_binding_declaration_kind(
+    runtime_ui_resolve_form_binding_type(form_metadata)
+  );
+}
+
+private function runtime_ui_build_form_binding_state(
+  form_metadata: Json,
+  form_state: Json
+): Json {
+  if (runtime_ui_resolve_form_binding_type(form_metadata) == "") {
+    return null;
+  }
+
+  return runtime_ui_materialize_form_binding_state(form_metadata, form_state);
+}
+
+private function runtime_ui_build_binding_runtime_object(
+  form_metadata: Json,
+  binding_state: Json
+): RuntimeObject? {
+  let binding_type = runtime_ui_resolve_form_binding_type(form_metadata);
+  if (binding_type == "") {
+    return null;
+  }
+
+  let binding_object = runtime_object_create(
+    binding_type,
+    runtime_ui_resolve_form_binding_kind(form_metadata),
+    runtime_ui_build_binding_members(form_metadata),
+    binding_state ?? {}
+  );
+  for (entry in binding_state ?? {}) {
+    let key = Runtime.json_to_str(entry["key"]);
+    if (key == "") {
+      continue;
+    }
+    binding_object = runtime_object_set_member(binding_object, key, entry["value"]);
+  }
+  return binding_object;
+}
+
+private function runtime_ui_build_binding_runtime_inspection(
+  form_metadata: Json,
+  form_state: Json
+): Json {
+  let binding_object = runtime_ui_build_binding_runtime_object(
+    form_metadata,
+    runtime_ui_build_form_binding_state(form_metadata, form_state)
+  );
+  if (binding_object is null) {
+    return null;
+  }
+
+  let inspection = runtime_object_inspect(binding_object);
+  return {
+    "type_name": inspection.type_name,
+    "object_kind": inspection.object_kind,
+    "member_count": inspection.member_count,
+    "has_members": inspection.has_members,
+    "has_state": inspection.has_state
+  };
+}
+
+private function runtime_ui_cast_binding_runtime_object(
+  form_metadata: Json,
+  binding_state: Json
+): RuntimeObject? {
+  let binding_object = runtime_ui_build_binding_runtime_object(form_metadata, binding_state);
+  if (binding_object is null) {
+    return null;
+  }
+
+  let binding_type = runtime_ui_resolve_form_binding_type(form_metadata);
+  if (binding_type == "") {
+    return binding_object;
+  }
+
+  return runtime_object_cast(binding_object, binding_type);
+}
+
+private function runtime_ui_build_form_binding_context(
+  form_metadata: Json,
+  form_state: Json
+): Json {
+  let binding_type = runtime_ui_resolve_form_binding_type(form_metadata);
+  let binding_kind = runtime_ui_resolve_form_binding_kind(form_metadata);
+  if (binding_type == "") {
+    return null;
+  }
+
+  return {
+    "kind": "form",
+    "type": binding_type,
+    "binding_kind": binding_kind,
+    "key_fields": runtime_ui_build_binding_key_fields(form_metadata),
+    "members": runtime_ui_build_binding_members(form_metadata),
+    "runtime_object": runtime_ui_build_binding_runtime_inspection(form_metadata, form_state),
+    "state": runtime_ui_build_form_binding_state(form_metadata, form_state)
+  };
+}
+
+private function runtime_ui_build_internal_form_state(
+  form_metadata: Json,
+  form_state: Json,
+  open_args: Json
+): RuntimeUiInternalFormState {
+  let internal_state = Runtime.json_parse("{}");
+  internal_state["binding_type"] = runtime_ui_resolve_form_binding_type(form_metadata);
+  internal_state["state"] = form_state ?? {};
+  internal_state["open_args"] = open_args;
+  if (Runtime.json_to_str(internal_state.binding_type) != "") {
+    internal_state["binding_kind"] = runtime_ui_resolve_form_binding_kind(form_metadata);
+    internal_state["binding_members"] = runtime_ui_build_binding_members(form_metadata);
+    internal_state["binding_key_fields"] = runtime_ui_build_binding_key_fields(form_metadata);
+    internal_state["binding_state"] = runtime_ui_materialize_form_binding_state(
+      form_metadata,
+      internal_state.state
+    );
+    internal_state["binding_object"] = runtime_ui_build_binding_runtime_object(
+      form_metadata,
+      internal_state.binding_state
+    );
+    let serialized_binding_object_state = internal_state.binding_state;
+    if (internal_state.binding_object != null) {
+      serialized_binding_object_state = runtime_object_serialize(internal_state.binding_object);
+    }
+    internal_state["state"] = runtime_ui_serialize_form_binding_state(
+      form_metadata,
+      internal_state.state,
+      serialized_binding_object_state
+    );
+  } else {
+    internal_state["binding_kind"] = "";
+    internal_state["binding_members"] = {};
+    internal_state["binding_key_fields"] = [];
+    internal_state["binding_object"] = null;
+    internal_state["binding_state"] = null;
+  }
+  return internal_state;
+}

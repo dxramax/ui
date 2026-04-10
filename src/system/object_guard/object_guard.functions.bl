@@ -1,0 +1,592 @@
+private function object_guard_has_text(value: string?): bool {
+  return Runtime.str_trim(value) != "";
+}
+
+private function object_guard_normalize_text(value: string?): string {
+  return Runtime.str_trim(value);
+}
+
+private function object_guard_has_json_text(value: Json): bool {
+  return Runtime.json_to_str(value) != "";
+}
+
+private function object_guard_default_ttl_seconds(): int {
+  return 90;
+}
+
+private function object_guard_resolve_ttl_seconds(ttl_seconds: int?): int {
+  if (ttl_seconds == null || ttl_seconds <= 0) {
+    return object_guard_default_ttl_seconds();
+  }
+  return ttl_seconds;
+}
+
+private function object_guard_build_result(
+  ok: bool,
+  code: string?,
+  message: string?,
+  object_type: string?,
+  object_key: string?,
+  current_guard: SystemCurrentObjectGuard?
+): ObjectGuardResult {
+  let owner_session_id: Json = null;
+  let owner_form_instance_id: Json = null;
+  let owner_user_id: Json = null;
+  let owner_tenant_id: Json = null;
+  let current_expires_at: Json = null;
+  if (current_guard != null) {
+    owner_session_id = current_guard.owner_session_id;
+    owner_form_instance_id = current_guard.owner_form_instance_id;
+    owner_user_id = current_guard.owner_user_id;
+    owner_tenant_id = current_guard.owner_tenant_id;
+    current_expires_at = current_guard.expires_at;
+  }
+  let result = Runtime.json_parse("{}");
+  result["ok"] = ok;
+  result["code"] = code;
+  result["message"] = message;
+  result["object_type"] = object_type;
+  result["object_key"] = object_key;
+  result["owner_session_id"] = owner_session_id;
+  result["owner_form_instance_id"] = owner_form_instance_id;
+  result["owner_user_id"] = owner_user_id;
+  result["owner_tenant_id"] = owner_tenant_id;
+  result["expires_at"] = current_expires_at;
+  return result;
+}
+
+private function object_guard_owner_matches(
+  current_guard: SystemCurrentObjectGuard?,
+  owner: ObjectGuardOwnerContext?
+): bool {
+  if (current_guard is null || owner is null) {
+    return false;
+  }
+
+  let normalized_session_id = object_guard_normalize_text(owner.session_id);
+  if (normalized_session_id == "" || current_guard.owner_session_id != normalized_session_id) {
+    return false;
+  }
+
+  let normalized_form_instance_id = object_guard_normalize_text(owner.form_instance_id);
+  let normalized_user_id = object_guard_normalize_text(owner.user_id);
+  let normalized_tenant_id = object_guard_normalize_text(owner.tenant_id);
+
+  if (normalized_form_instance_id != ""
+    && object_guard_normalize_text(current_guard.owner_form_instance_id) != normalized_form_instance_id) {
+    return false;
+  }
+
+  if (normalized_user_id != ""
+    && object_guard_normalize_text(current_guard.owner_user_id) != normalized_user_id) {
+    return false;
+  }
+
+  if (normalized_tenant_id != ""
+    && object_guard_normalize_text(current_guard.owner_tenant_id) != normalized_tenant_id) {
+    return false;
+  }
+
+  return true;
+}
+
+private function object_guard_is_expired(current_guard: SystemCurrentObjectGuard?): bool {
+  if (current_guard is null) {
+    return false;
+  }
+  let expires_at: string? = current_guard.expires_at;
+  if (expires_at == null) {
+    return false;
+  }
+  return Runtime.str_compare(expires_at, now()) < 0;
+}
+
+private function object_guard_target_invalid(target: ObjectGuardTarget?): bool {
+  if (target is null) {
+    return true;
+  }
+  return !object_guard_has_text(target.object_type) || !object_guard_has_text(target.object_key);
+}
+
+private function object_guard_owner_invalid(owner: ObjectGuardOwnerContext?): bool {
+  if (owner is null) {
+    return true;
+  }
+  return !object_guard_has_text(owner.session_id);
+}
+
+private function object_guard_touch_history(
+  action_type: string,
+  action_status: string,
+  action_message: string?,
+  object_type: string,
+  object_key: string,
+  object_label: string?,
+  guard_mode: string?,
+  owner: ObjectGuardOwnerContext?,
+  expires_at: string?
+): bool {
+  let normalized_guard_mode = object_guard_normalize_text(guard_mode);
+  if (!object_guard_has_text(normalized_guard_mode)) {
+    normalized_guard_mode = "edit";
+  }
+  let owner_session_id: Json = null;
+  let owner_form_instance_id: Json = null;
+  let owner_user_id: Json = null;
+  let owner_tenant_id: Json = null;
+  if (owner != null) {
+    owner_session_id = object_guard_normalize_text(owner.session_id);
+    owner_form_instance_id = object_guard_normalize_text(owner.form_instance_id);
+    owner_user_id = object_guard_normalize_text(owner.user_id);
+    owner_tenant_id = object_guard_normalize_text(owner.tenant_id);
+  }
+  let created_at = now();
+  let history_entry: SystemObjectGuardHistory = Runtime.json_parse("{}");
+  history_entry["object_type"] = object_type;
+  history_entry["object_key"] = object_key;
+  history_entry["object_label"] = object_label;
+  history_entry["owner_session_id"] = owner_session_id;
+  history_entry["owner_form_instance_id"] = owner_form_instance_id;
+  history_entry["owner_user_id"] = owner_user_id;
+  history_entry["owner_tenant_id"] = owner_tenant_id;
+  history_entry["guard_mode"] = normalized_guard_mode;
+  history_entry["action_type"] = action_type;
+  history_entry["action_status"] = action_status;
+  history_entry["action_message"] = action_message;
+  history_entry["created_at"] = created_at;
+  history_entry["expires_at"] = expires_at;
+  save history_entry;
+  return true;
+}
+
+private function object_guard_get_current_row(
+  object_type_param: string,
+  object_key_param: string
+): SystemCurrentObjectGuard? {
+  select var current_guard: SystemCurrentObjectGuard
+    where object_type = object_type_param
+      and object_key = object_key_param;
+  return current_guard;
+}
+
+private function object_guard_delete_current_row(
+  object_type_param: string,
+  object_key_param: string
+): bool {
+  delete from SystemCurrentObjectGuard
+    where object_type = object_type_param
+      and object_key = object_key_param;
+  return true;
+}
+
+private function object_guard_build_expiry(ttl_seconds: int): string {
+  return date_add(now(), ttl_seconds, "seconds");
+}
+
+private function object_guard_released_expiry(): string {
+  return "0000-01-01T00:00:00Z";
+}
+
+public function object_guard_build_key_from_runtime_object(
+  runtime_object: RuntimeObject?,
+  key_fields: Json
+): string {
+  if (runtime_object is null) {
+    return "";
+  }
+
+  let canonical_key = Runtime.json_parse("{}");
+  let key_count = 0;
+  for (key_field in key_fields ?? []) {
+    let field_name = object_guard_normalize_text(Runtime.json_to_str(key_field));
+    if (field_name == "") {
+      continue;
+    }
+    if (!runtime_object_has_member(runtime_object, field_name)) {
+      return "";
+    }
+
+    let field_value = runtime_object_get_member(runtime_object, field_name);
+    if (field_value == null || !object_guard_has_json_text(field_value)) {
+      return "";
+    }
+
+    canonical_key[field_name] = field_value;
+    key_count = key_count + 1;
+  }
+
+  if (key_count == 0) {
+    return "";
+  }
+  return Runtime.json_to_str(Runtime.json_stringify(canonical_key));
+}
+
+public function object_guard_build_target_from_runtime_object(
+  runtime_object: RuntimeObject?,
+  key_fields: Json,
+  object_label: string?
+): ObjectGuardTarget? {
+  if (runtime_object is null) {
+    return null;
+  }
+
+  let object_type = object_guard_normalize_text(runtime_object_type_name(runtime_object));
+  let object_key = object_guard_build_key_from_runtime_object(runtime_object, key_fields);
+  if (object_type == "" || object_key == "") {
+    return null;
+  }
+
+  let target: ObjectGuardTarget = Runtime.json_parse("{}");
+  target["object_type"] = object_type;
+  target["object_key"] = object_key;
+  target["object_label"] = object_label;
+  return target;
+}
+
+private function object_guard_apply_acquire(
+  target: ObjectGuardTarget,
+  owner: ObjectGuardOwnerContext,
+  ttl_seconds_input: int?,
+  guard_mode_input: string?
+): ObjectGuardResult {
+  let normalized_object_type = object_guard_normalize_text(target.object_type);
+  let normalized_object_key = object_guard_normalize_text(target.object_key);
+  let normalized_guard_mode = object_guard_normalize_text(guard_mode_input);
+  let ttl_seconds = object_guard_resolve_ttl_seconds(ttl_seconds_input);
+  let expires_at = object_guard_build_expiry(ttl_seconds);
+  let current_guard = object_guard_get_current(target);
+
+  if (current_guard != null && !object_guard_owner_matches(current_guard, owner)) {
+    object_guard_touch_history(
+      "acquire",
+      "conflict",
+      "object guard is already held by another owner",
+      normalized_object_type,
+      normalized_object_key,
+      target.object_label,
+      normalized_guard_mode,
+      owner,
+      current_guard.expires_at
+    );
+    return object_guard_build_result(
+      false,
+      "OBJ_GUARD_HELD_BY_OTHER",
+      "object guard is already held by another owner",
+      normalized_object_type,
+      normalized_object_key,
+      current_guard
+    );
+  }
+
+  let history_action_type = "refresh";
+  let history_action_message = "object guard refreshed by same owner";
+  let result_code = "OBJ_GUARD_REFRESHED";
+  let result_message = "object guard refreshed";
+  let next_guard = current_guard;
+  if (current_guard is null) {
+    let created_guard_mode = normalized_guard_mode;
+    if (!object_guard_has_text(created_guard_mode)) {
+      created_guard_mode = "edit";
+    }
+    let owner_session_id = object_guard_normalize_text(owner.session_id);
+    let owner_form_instance_id = object_guard_normalize_text(owner.form_instance_id);
+    let owner_user_id = object_guard_normalize_text(owner.user_id);
+    let owner_tenant_id = object_guard_normalize_text(owner.tenant_id);
+    let current_time = now();
+    current_guard = Runtime.json_parse("{}");
+    current_guard["object_type"] = normalized_object_type;
+    current_guard["object_key"] = normalized_object_key;
+    current_guard["object_label"] = target.object_label;
+    current_guard["owner_session_id"] = owner_session_id;
+    current_guard["owner_form_instance_id"] = owner_form_instance_id;
+    current_guard["owner_user_id"] = owner_user_id;
+    current_guard["owner_tenant_id"] = owner_tenant_id;
+    current_guard["guard_mode"] = created_guard_mode;
+    current_guard["acquired_at"] = current_time;
+    current_guard["last_seen_at"] = current_time;
+    current_guard["expires_at"] = expires_at;
+    save current_guard;
+    next_guard = current_guard;
+    history_action_type = "acquire";
+    history_action_message = "object guard acquired";
+    result_code = "OBJ_GUARD_ACQUIRED";
+    result_message = "object guard acquired";
+  } else {
+    let refreshed_guard_mode = normalized_guard_mode;
+    if (!object_guard_has_text(refreshed_guard_mode)) {
+      refreshed_guard_mode = "edit";
+    }
+    let owner_session_id = object_guard_normalize_text(owner.session_id);
+    let owner_form_instance_id = object_guard_normalize_text(owner.form_instance_id);
+    let owner_user_id = object_guard_normalize_text(owner.user_id);
+    let owner_tenant_id = object_guard_normalize_text(owner.tenant_id);
+    let current_time = now();
+    current_guard["object_label"] = target.object_label;
+    current_guard["owner_session_id"] = owner_session_id;
+    current_guard["owner_form_instance_id"] = owner_form_instance_id;
+    current_guard["owner_user_id"] = owner_user_id;
+    current_guard["owner_tenant_id"] = owner_tenant_id;
+    current_guard["guard_mode"] = refreshed_guard_mode;
+    current_guard["last_seen_at"] = current_time;
+    current_guard["expires_at"] = expires_at;
+    save current_guard;
+    next_guard = current_guard;
+  }
+
+  object_guard_touch_history(
+    history_action_type,
+    "ok",
+    history_action_message,
+    normalized_object_type,
+    normalized_object_key,
+    target.object_label,
+    next_guard.guard_mode,
+    owner,
+    expires_at
+  );
+
+  return object_guard_build_result(
+    true,
+    result_code,
+    result_message,
+    normalized_object_type,
+    normalized_object_key,
+    next_guard
+  );
+}
+
+public function object_guard_get_current(target: ObjectGuardTarget): SystemCurrentObjectGuard? {
+  if (object_guard_target_invalid(target)) {
+    return null;
+  }
+
+  let normalized_object_type = object_guard_normalize_text(target.object_type);
+  let normalized_object_key = object_guard_normalize_text(target.object_key);
+  let current_guard = object_guard_get_current_row(normalized_object_type, normalized_object_key);
+  if (object_guard_is_expired(current_guard)) {
+    object_guard_delete_current_row(normalized_object_type, normalized_object_key);
+    object_guard_touch_history(
+      "expire",
+      "expired",
+      "object guard expired before lookup reuse",
+      normalized_object_type,
+      normalized_object_key,
+      target.object_label,
+      current_guard.guard_mode,
+      null,
+      current_guard.expires_at
+    );
+    return null;
+  }
+
+  return current_guard;
+}
+
+public function object_guard_acquire(request: ObjectGuardAcquireRequest): ObjectGuardResult {
+  let request_object_type = "";
+  let request_object_key = "";
+  if (request.target != null) {
+    request_object_type = request.target.object_type;
+    request_object_key = request.target.object_key;
+  }
+
+  if (object_guard_target_invalid(request.target) || object_guard_owner_invalid(request.owner)) {
+    return object_guard_build_result(
+      false,
+      "OBJ_GUARD_TARGET_INVALID",
+      "object guard target or owner context is invalid",
+      request_object_type,
+      request_object_key,
+      null
+    );
+  }
+
+  return object_guard_apply_acquire(
+    request.target,
+    request.owner,
+    request.ttl_seconds,
+    request.guard_mode
+  );
+}
+
+public function object_guard_release(request: ObjectGuardReleaseRequest): ObjectGuardResult {
+  let request_object_type = "";
+  let request_object_key = "";
+  if (request.target != null) {
+    request_object_type = request.target.object_type;
+    request_object_key = request.target.object_key;
+  }
+
+  if (object_guard_target_invalid(request.target) || object_guard_owner_invalid(request.owner)) {
+    return object_guard_build_result(
+      false,
+      "OBJ_GUARD_TARGET_INVALID",
+      "object guard target or owner context is invalid",
+      request_object_type,
+      request_object_key,
+      null
+    );
+  }
+
+  let normalized_object_type = object_guard_normalize_text(request.target.object_type);
+  let normalized_object_key = object_guard_normalize_text(request.target.object_key);
+  let current_guard = object_guard_get_current(request.target);
+  if (current_guard is null) {
+    object_guard_touch_history(
+      "release",
+      "noop",
+      "object guard already absent",
+      normalized_object_type,
+      normalized_object_key,
+      request.target.object_label,
+      "edit",
+      request.owner,
+      null
+    );
+    return object_guard_build_result(
+      true,
+      "OBJ_GUARD_ALREADY_RELEASED",
+      "object guard already absent",
+      normalized_object_type,
+      normalized_object_key,
+      null
+    );
+  }
+
+  if (!object_guard_owner_matches(current_guard, request.owner)) {
+    object_guard_touch_history(
+      "release",
+      "denied",
+      "object guard release denied for non-owner",
+      normalized_object_type,
+      normalized_object_key,
+      request.target.object_label,
+      current_guard.guard_mode,
+      request.owner,
+      current_guard.expires_at
+    );
+    return object_guard_build_result(
+      false,
+      "OBJ_GUARD_RELEASE_DENIED",
+      "object guard release denied for non-owner",
+      normalized_object_type,
+      normalized_object_key,
+      current_guard
+    );
+  }
+
+  let released_expires_at = object_guard_released_expiry();
+  current_guard["last_seen_at"] = released_expires_at;
+  current_guard["expires_at"] = released_expires_at;
+  save current_guard;
+  object_guard_delete_current_row(normalized_object_type, normalized_object_key);
+  object_guard_touch_history(
+    "release",
+    "released",
+    "object guard released",
+    normalized_object_type,
+    normalized_object_key,
+    request.target.object_label,
+    current_guard.guard_mode,
+    request.owner,
+    released_expires_at
+  );
+  return object_guard_build_result(
+    true,
+    "OBJ_GUARD_RELEASED",
+    "object guard released",
+    normalized_object_type,
+    normalized_object_key,
+    null
+  );
+}
+
+public function object_guard_refresh(request: ObjectGuardRefreshRequest): ObjectGuardResult {
+  return object_guard_apply_acquire(
+    request.target,
+    request.owner,
+    request.ttl_seconds,
+    "edit"
+  );
+}
+
+public function object_guard_assert_owner(request: ObjectGuardReleaseRequest): ObjectGuardResult {
+  let request_object_type = "";
+  let request_object_key = "";
+  if (request.target != null) {
+    request_object_type = request.target.object_type;
+    request_object_key = request.target.object_key;
+  }
+
+  if (object_guard_target_invalid(request.target) || object_guard_owner_invalid(request.owner)) {
+    return object_guard_build_result(
+      false,
+      "OBJ_GUARD_TARGET_INVALID",
+      "object guard target or owner context is invalid",
+      request_object_type,
+      request_object_key,
+      null
+    );
+  }
+
+  let normalized_object_type = object_guard_normalize_text(request.target.object_type);
+  let normalized_object_key = object_guard_normalize_text(request.target.object_key);
+  let current_guard = object_guard_get_current(request.target);
+  if (current_guard is null) {
+    return object_guard_build_result(
+      false,
+      "OBJ_GUARD_REQUIRED",
+      "object guard is required before mutation",
+      normalized_object_type,
+      normalized_object_key,
+      null
+    );
+  }
+
+  if (!object_guard_owner_matches(current_guard, request.owner)) {
+    return object_guard_build_result(
+      false,
+      "OBJ_GUARD_HELD_BY_OTHER",
+      "object guard is held by another owner",
+      normalized_object_type,
+      normalized_object_key,
+      current_guard
+    );
+  }
+
+  return object_guard_build_result(
+    true,
+    "OBJ_GUARD_OWNER_CONFIRMED",
+    "object guard ownership confirmed",
+    normalized_object_type,
+    normalized_object_key,
+    current_guard
+  );
+}
+
+public function object_guard_cleanup_expired(): int {
+  let expired_count = 0;
+  let current_time = now();
+
+  select var expired_guards: ArrayRuntime<SystemCurrentObjectGuard>
+    where expires_at < current_time
+    order by object_type, object_key;
+
+  for (current_guard in expired_guards) {
+    object_guard_delete_current_row(current_guard.object_type, current_guard.object_key);
+    object_guard_touch_history(
+      "expire",
+      "expired",
+      "object guard expired during cleanup",
+      current_guard.object_type,
+      current_guard.object_key,
+      current_guard.object_label,
+      current_guard.guard_mode,
+      null,
+      current_guard.expires_at
+    );
+    expired_count = expired_count + 1;
+  }
+
+  return expired_count;
+}

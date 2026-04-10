@@ -1,0 +1,154 @@
+public function runtime_object_create(
+  type_name: string,
+  object_kind: string,
+  members: Json?,
+  state: Json?
+): RuntimeObject {
+  let runtime_object = Runtime.json_parse("{}");
+  runtime_object["type_name"] = Runtime.str_trim(type_name);
+  runtime_object["object_kind"] = Runtime.str_trim(object_kind);
+  runtime_object["members"] = members ?? {};
+  runtime_object["state"] = state ?? {};
+  return runtime_object;
+}
+
+public function runtime_object_type_name(
+  runtime_object: RuntimeObject
+): string {
+  return Runtime.json_to_str(runtime_object["type_name"]);
+}
+
+public function runtime_object_kind(
+  runtime_object: RuntimeObject
+): string {
+  return Runtime.json_to_str(runtime_object["object_kind"]);
+}
+
+public function runtime_object_matches_type(
+  runtime_object: RuntimeObject,
+  expected_type_name: string
+): bool {
+  let normalized_expected_type_name = Runtime.str_trim(expected_type_name);
+  if (normalized_expected_type_name == "") {
+    return false;
+  }
+
+  return runtime_object_type_name(runtime_object) == normalized_expected_type_name;
+}
+
+public function runtime_object_matches_kind(
+  runtime_object: RuntimeObject,
+  expected_object_kind: string
+): bool {
+  let normalized_expected_object_kind = Runtime.str_trim(expected_object_kind);
+  if (normalized_expected_object_kind == "") {
+    return false;
+  }
+
+  return runtime_object_kind(runtime_object) == normalized_expected_object_kind;
+}
+
+public function runtime_object_has_member(
+  runtime_object: RuntimeObject,
+  member_name: string
+): bool {
+  let normalized_member_name = Runtime.str_trim(member_name);
+  if (normalized_member_name == "") {
+    return false;
+  }
+
+  return runtime_object.members[normalized_member_name] != null;
+}
+
+public function runtime_object_member_metadata(
+  runtime_object: RuntimeObject,
+  member_name: string
+): Json {
+  let normalized_member_name = Runtime.str_trim(member_name);
+  if (normalized_member_name == "") {
+    return null;
+  }
+
+  return runtime_object.members[normalized_member_name];
+}
+
+public function runtime_object_get_member(
+  runtime_object: RuntimeObject,
+  member_name: string
+): Json {
+  let normalized_member_name = Runtime.str_trim(member_name);
+  if (normalized_member_name == "") {
+    return null;
+  }
+
+  return runtime_object.state[normalized_member_name];
+}
+
+public function runtime_object_set_member(
+  runtime_object: RuntimeObject,
+  member_name: string,
+  value: Json
+): RuntimeObject {
+  let normalized_member_name = Runtime.str_trim(member_name);
+  if (normalized_member_name == "") {
+    return runtime_object;
+  }
+
+  let next_state = runtime_object.state ?? {};
+  next_state[normalized_member_name] = value;
+  runtime_object.state = next_state;
+  return runtime_object;
+}
+
+public function runtime_object_cast(
+  runtime_object: RuntimeObject,
+  expected_type_name: string
+): RuntimeObject? {
+  let normalized_expected_type_name = Runtime.str_trim(expected_type_name);
+  if (normalized_expected_type_name == "") {
+    return runtime_object;
+  }
+
+  if (!runtime_object_matches_type(runtime_object, expected_type_name)) {
+    return null;
+  }
+
+  return runtime_object;
+}
+
+public function runtime_object_inspect(
+  runtime_object: RuntimeObject
+): RuntimeObjectInspection {
+  let inspection = Runtime.json_parse("{}");
+  inspection["type_name"] = runtime_object_type_name(runtime_object);
+  inspection["object_kind"] = runtime_object_kind(runtime_object);
+
+  let member_count = 0;
+  for (entry in runtime_object.members ?? {}) {
+    let member_name = Runtime.json_to_str(entry["key"]);
+    if (member_name == "") {
+      continue;
+    }
+    member_count = member_count + 1;
+  }
+
+  let has_state = false;
+  for (entry in runtime_object.state ?? {}) {
+    let member_name = Runtime.json_to_str(entry["key"]);
+    if (member_name == "") {
+      continue;
+    }
+    has_state = true;
+  }
+
+  inspection["member_count"] = member_count;
+  inspection["has_members"] = member_count > 0;
+  inspection["has_state"] = has_state;
+  return inspection;
+}
+
+public function runtime_object_serialize(
+  runtime_object: RuntimeObject
+): Json {
+  return runtime_object.state ?? {};
+}

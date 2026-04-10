@@ -1,0 +1,2163 @@
+private function runtime_ui_resolve_control_request_ui_state(
+  request_ui_state: Json,
+  control_id: string
+): Json {
+  let normalized_control_id = Runtime.json_to_str(control_id);
+  if (request_ui_state == null || normalized_control_id == "") {
+    return null;
+  }
+  return request_ui_state[normalized_control_id];
+}
+
+private function runtime_ui_resolve_persisted_control_runtime_state(
+  persisted_ui_state: Json,
+  control_id: string
+): Json {
+  let normalized_control_id = Runtime.json_to_str(control_id);
+  if (persisted_ui_state == null || normalized_control_id == "") {
+    return null;
+  }
+  return persisted_ui_state[normalized_control_id];
+}
+
+private function runtime_ui_resolve_control_runtime_field(
+  request_runtime_state: Json,
+  persisted_runtime_state: Json,
+  key: string
+): Json {
+  let normalized_key = Runtime.json_to_str(key);
+  if (normalized_key == "") {
+    return null;
+  }
+  if (request_runtime_state != null && request_runtime_state[normalized_key] != null) {
+    return request_runtime_state[normalized_key];
+  }
+  if (persisted_runtime_state != null) {
+    return persisted_runtime_state[normalized_key];
+  }
+  return null;
+}
+
+private function runtime_ui_build_control_runtime_contract(
+  control_metadata: Json
+): RuntimeUiControlRuntimeContract {
+  let contract = Runtime.json_parse("{}");
+  let normalized_control_metadata = control_metadata ?? {};
+  let control_kind = Runtime.json_to_str(normalized_control_metadata["type"]);
+  let control_id = Runtime.json_to_str(normalized_control_metadata["id"]);
+  let binding_path = Runtime.json_to_str(normalized_control_metadata["binding_path"]);
+
+  let selection_path = Runtime.json_to_str(normalized_control_metadata["selection_path"]);
+
+  let pagination_path = Runtime.json_to_str(normalized_control_metadata["pagination_path"]);
+
+  contract["control_id"] = control_id;
+  contract["control_kind"] = control_kind;
+  contract["binding_path"] = binding_path;
+  contract["selection_path"] = selection_path;
+  contract["pagination_path"] = pagination_path;
+  contract["grid_like"] = control_kind == "DataGrid" || control_kind == "Grid";
+  contract["field_like"] = !contract.grid_like;
+  contract["supports_value"] = contract.field_like;
+  contract["supports_selected_key"] = contract.field_like;
+  contract["supports_associated"] = contract.field_like;
+  contract["supports_selection"] = contract.grid_like;
+  contract["supports_pagination"] = contract.grid_like;
+  contract["supports_read_only"] = contract.field_like;
+  contract["supports_display_only"] = contract.field_like;
+  contract["supports_disabled"] = contract.field_like;
+  return contract;
+}
+
+private function runtime_ui_build_control_runtime_state_snapshot(
+  contract: RuntimeUiControlRuntimeContract,
+  form_metadata: Json,
+  form_state: Json,
+  binding_object: RuntimeObject?,
+  persisted_runtime_state: Json,
+  request_runtime_state: Json
+): RuntimeUiControlRuntimeState {
+  let runtime_state = Runtime.json_parse("{}");
+
+  if (contract.supports_selection && Runtime.json_to_str(contract.selection_path) != "") {
+    runtime_state["selection"] = runtime_ui_resolve_form_state_path_with_binding_object(
+      form_metadata,
+      form_state,
+      binding_object,
+      contract.selection_path
+    );
+  }
+  if (contract.supports_pagination && Runtime.json_to_str(contract.pagination_path) != "") {
+    runtime_state["pagination"] = runtime_ui_resolve_form_state_path_with_binding_object(
+      form_metadata,
+      form_state,
+      binding_object,
+      contract.pagination_path
+    );
+  }
+  if (contract.grid_like) {
+    let selected_state = runtime_ui_resolve_control_runtime_field(
+      request_runtime_state,
+      persisted_runtime_state,
+      "selected"
+    );
+    if (selected_state != null) {
+      runtime_state["selected"] = selected_state;
+    } else if (runtime_state.selection != null) {
+      let selected_row_id = runtime_ui_resolve_grid_row_id(runtime_state.selection);
+      if (selected_row_id != "") {
+        runtime_state["selected"] = [selected_row_id];
+      }
+    }
+
+    let selection_range_state = runtime_ui_resolve_control_runtime_field(
+      request_runtime_state,
+      persisted_runtime_state,
+      "selectionRange"
+    );
+    if (selection_range_state != null) {
+      runtime_state["selection_range"] = selection_range_state;
+    }
+
+    let active_cell_state = runtime_ui_resolve_control_runtime_field(
+      request_runtime_state,
+      persisted_runtime_state,
+      "activeCell"
+    );
+    if (active_cell_state != null) {
+      runtime_state["active_cell"] = active_cell_state;
+    }
+
+    let filters_state = runtime_ui_resolve_control_runtime_field(
+      request_runtime_state,
+      persisted_runtime_state,
+      "filters"
+    );
+    if (filters_state != null) {
+      runtime_state["filters"] = filters_state;
+    }
+
+    let filter_model_state = runtime_ui_resolve_control_runtime_field(
+      request_runtime_state,
+      persisted_runtime_state,
+      "filterModel"
+    );
+    if (filter_model_state != null) {
+      runtime_state["filter_model"] = filter_model_state;
+    }
+
+    let search_query_state = runtime_ui_resolve_control_runtime_field(
+      request_runtime_state,
+      persisted_runtime_state,
+      "searchQuery"
+    );
+    if (search_query_state == null) {
+      search_query_state = runtime_ui_resolve_control_runtime_field(
+        request_runtime_state,
+        persisted_runtime_state,
+        "search_query"
+      );
+    }
+    if (search_query_state != null) {
+      runtime_state["search_query"] = search_query_state;
+    }
+
+    let sort_key_state = runtime_ui_resolve_control_runtime_field(
+      request_runtime_state,
+      persisted_runtime_state,
+      "sortKey"
+    );
+    if (sort_key_state != null) {
+      runtime_state["sort_key"] = sort_key_state;
+    }
+
+    let sort_direction_state = runtime_ui_resolve_control_runtime_field(
+      request_runtime_state,
+      persisted_runtime_state,
+      "sortDirection"
+    );
+    if (sort_direction_state != null) {
+      runtime_state["sort_direction"] = sort_direction_state;
+    }
+
+    let sorts_state = runtime_ui_resolve_control_runtime_field(
+      request_runtime_state,
+      persisted_runtime_state,
+      "sorts"
+    );
+    if (sorts_state != null) {
+      runtime_state["sorts"] = sorts_state;
+    }
+
+    if (runtime_state.pagination != null) {
+      let pagination_state = runtime_state.pagination;
+      if (pagination_state["page"] != null) {
+        runtime_state["page"] = pagination_state["page"];
+      }
+      if (pagination_state["size"] != null) {
+        runtime_state["page_size"] = pagination_state["size"];
+      }
+      if (pagination_state["total_count"] != null) {
+        runtime_state["total_rows"] = pagination_state["total_count"];
+      }
+    }
+    if (request_runtime_state != null) {
+      if (request_runtime_state["page"] != null) {
+        runtime_state["page"] = request_runtime_state["page"];
+      }
+      if (request_runtime_state["pageSize"] != null) {
+        runtime_state["page_size"] = request_runtime_state["pageSize"];
+      }
+      if (request_runtime_state["totalRows"] != null) {
+        runtime_state["total_rows"] = request_runtime_state["totalRows"];
+      }
+    }
+    return runtime_state;
+  }
+
+  if (contract.supports_selected_key) {
+    runtime_state["selected_key"] = runtime_ui_resolve_control_runtime_field(
+      request_runtime_state,
+      persisted_runtime_state,
+      "selectedKey"
+    );
+  }
+  if (contract.supports_associated) {
+    runtime_state["associated"] = runtime_ui_resolve_control_runtime_field(
+      request_runtime_state,
+      persisted_runtime_state,
+      "associated"
+    );
+  }
+  if (contract.supports_read_only) {
+    runtime_state["read_only"] = runtime_ui_resolve_control_runtime_field(
+      request_runtime_state,
+      persisted_runtime_state,
+      "readOnly"
+    );
+  }
+  if (contract.supports_disabled) {
+    runtime_state["disabled"] = runtime_ui_resolve_control_runtime_field(
+      request_runtime_state,
+      persisted_runtime_state,
+      "disabled"
+    );
+  }
+  if (contract.supports_display_only) {
+    runtime_state["display_only"] = runtime_ui_resolve_control_runtime_field(
+      request_runtime_state,
+      persisted_runtime_state,
+      "displayOnly"
+    );
+  }
+
+  return runtime_state;
+}
+
+private function runtime_ui_control_runtime_state_to_json(
+  runtime_state: RuntimeUiControlRuntimeState
+): Json {
+  let serialized_runtime_state: Json = {};
+  if (runtime_state is null) {
+    return serialized_runtime_state;
+  }
+
+  if (runtime_state.selected_key != null) {
+    serialized_runtime_state["selectedKey"] = runtime_state.selected_key;
+  }
+  if (runtime_state.associated != null) {
+    serialized_runtime_state["associated"] = runtime_state.associated;
+  }
+  if (runtime_state.read_only != null) {
+    serialized_runtime_state["readOnly"] = runtime_state.read_only;
+  }
+  if (runtime_state.display_only != null) {
+    serialized_runtime_state["displayOnly"] = runtime_state.display_only;
+  }
+  if (runtime_state.disabled != null) {
+    serialized_runtime_state["disabled"] = runtime_state.disabled;
+  }
+  if (runtime_state.visible != null) {
+    serialized_runtime_state["visible"] = runtime_state.visible;
+  }
+  if (runtime_state.pending != null) {
+    serialized_runtime_state["pending"] = runtime_state.pending;
+  }
+  if (runtime_state.selection != null) {
+    serialized_runtime_state["selection"] = runtime_state.selection;
+  }
+  if (runtime_state.pagination != null) {
+    serialized_runtime_state["pagination"] = runtime_state.pagination;
+  }
+  if (runtime_state.selected != null) {
+    serialized_runtime_state["selected"] = runtime_state.selected;
+  }
+  if (runtime_state.selection_range != null) {
+    serialized_runtime_state["selectionRange"] = runtime_state.selection_range;
+  }
+  if (runtime_state.active_cell != null) {
+    serialized_runtime_state["activeCell"] = runtime_state.active_cell;
+  }
+  if (runtime_state.filters != null) {
+    serialized_runtime_state["filters"] = runtime_state.filters;
+  }
+  if (runtime_state.filter_model != null) {
+    serialized_runtime_state["filterModel"] = runtime_state.filter_model;
+  }
+  if (runtime_state.search_query != null) {
+    serialized_runtime_state["searchQuery"] = runtime_state.search_query;
+  }
+  if (runtime_state.sort_key != null) {
+    serialized_runtime_state["sortKey"] = runtime_state.sort_key;
+  }
+  if (runtime_state.sort_direction != null) {
+    serialized_runtime_state["sortDirection"] = runtime_state.sort_direction;
+  }
+  if (runtime_state.sorts != null) {
+    serialized_runtime_state["sorts"] = runtime_state.sorts;
+  }
+  if (runtime_state.page != null) {
+    serialized_runtime_state["page"] = runtime_ui_json_number_from_int(runtime_state.page);
+  }
+  if (runtime_state.page_size != null) {
+    serialized_runtime_state["pageSize"] = runtime_ui_json_number_from_int(runtime_state.page_size);
+  }
+  if (runtime_state.total_rows != null) {
+    serialized_runtime_state["totalRows"] = runtime_ui_json_number_from_int(
+      runtime_state.total_rows
+    );
+  }
+  return serialized_runtime_state;
+}
+
+private function runtime_ui_apply_grid_ui_state_to_form_state(
+  form_metadata: Json,
+  control_metadata: Json,
+  form_state: Json,
+  grid_ui_state: Json
+): Json {
+  let next_form_state = form_state ?? {};
+  if (control_metadata == null || grid_ui_state == null) {
+    return next_form_state;
+  }
+
+  let control_id = Runtime.json_to_str(control_metadata["id"]);
+  if (control_id == "") {
+    return next_form_state;
+  }
+
+  let selection_path = Runtime.json_to_str(control_metadata["selection_path"]);
+  if (selection_path != "") {
+    let selected_row_id = "";
+    let selected = grid_ui_state["selected"] ?? [];
+    for (row_id in selected) {
+      selected_row_id = Runtime.json_to_str(row_id);
+      if (selected_row_id != "") {
+        break;
+      }
+    }
+    let selected_row = null;
+    if (selected_row_id != "") {
+      let grid_rows = next_form_state[control_id] ?? [];
+      for (row in grid_rows) {
+        if (runtime_ui_resolve_grid_row_id(row) == selected_row_id) {
+          selected_row = row;
+          break;
+        }
+      }
+    }
+    next_form_state = runtime_ui_assign_form_state_path(
+      form_metadata,
+      next_form_state,
+      selection_path,
+      selected_row
+    );
+  }
+
+  let pagination_path = Runtime.json_to_str(control_metadata["pagination_path"]);
+  if (pagination_path != "") {
+    let pagination_state = runtime_ui_resolve_form_state_path(
+      form_metadata,
+      next_form_state,
+      pagination_path
+    );
+    if (pagination_state == null) {
+      pagination_state = {};
+    }
+    if (grid_ui_state["page"] != null) {
+      pagination_state["page"] = grid_ui_state["page"];
+    }
+    if (grid_ui_state["pageSize"] != null) {
+      pagination_state["size"] = grid_ui_state["pageSize"];
+    }
+    if (grid_ui_state["totalRows"] != null) {
+      pagination_state["total_count"] = grid_ui_state["totalRows"];
+    }
+    next_form_state = runtime_ui_assign_form_state_path(
+      form_metadata,
+      next_form_state,
+      pagination_path,
+      pagination_state
+    );
+  }
+
+  return next_form_state;
+}
+
+private function runtime_ui_build_button_runtime_state_snapshot(
+  button_metadata: Json,
+  persisted_runtime_state: Json,
+  request_runtime_state: Json
+): RuntimeUiControlRuntimeState {
+  let runtime_state = Runtime.json_parse("{}");
+  let disabled_state = runtime_ui_resolve_control_runtime_field(
+    request_runtime_state,
+    persisted_runtime_state,
+    "disabled"
+  );
+  if (disabled_state != null) {
+    runtime_state["disabled"] = disabled_state;
+  }
+
+  let visible_state = runtime_ui_resolve_control_runtime_field(
+    request_runtime_state,
+    persisted_runtime_state,
+    "visible"
+  );
+  if (visible_state != null) {
+    runtime_state["visible"] = visible_state;
+  }
+
+  let pending_state = runtime_ui_resolve_control_runtime_field(
+    request_runtime_state,
+    persisted_runtime_state,
+    "pending"
+  );
+  if (pending_state != null) {
+    runtime_state["pending"] = pending_state;
+  }
+
+  return runtime_state;
+}
+
+private function runtime_ui_build_control_runtime_state(
+  form_metadata: Json,
+  control_metadata: Json,
+  form_state: Json,
+  binding_object: RuntimeObject?,
+  persisted_runtime_state: Json,
+  request_runtime_state: Json
+): Json {
+  if (control_metadata == null) {
+    return {};
+  }
+  let contract = runtime_ui_build_control_runtime_contract(control_metadata);
+  let runtime_state = runtime_ui_build_control_runtime_state_snapshot(
+    contract,
+    form_metadata,
+    form_state,
+    binding_object,
+    persisted_runtime_state,
+    request_runtime_state
+  );
+  return runtime_ui_control_runtime_state_to_json(runtime_state);
+}
+
+private function runtime_ui_control_runtime_state_matches(
+  persisted_runtime_state: Json,
+  next_runtime_state: Json
+): bool {
+  if (persisted_runtime_state == null && next_runtime_state == null) {
+    return true;
+  }
+  if (persisted_runtime_state == null || next_runtime_state == null) {
+    return false;
+  }
+
+  return Runtime.json_to_str(Runtime.json_stringify(persisted_runtime_state))
+    == Runtime.json_to_str(Runtime.json_stringify(next_runtime_state));
+}
+
+private function runtime_ui_resolve_control_metadata_flag(
+  control_metadata: Json,
+  primary_key: string
+): Json {
+  if (control_metadata == null) {
+    return null;
+  }
+
+  let normalized_primary_key = Runtime.json_to_str(primary_key);
+  if (normalized_primary_key != "" && control_metadata[normalized_primary_key] != null) {
+    return control_metadata[normalized_primary_key];
+  }
+
+  let properties = control_metadata["properties"];
+  if (properties == null) {
+    return null;
+  }
+  if (normalized_primary_key != "" && properties[normalized_primary_key] != null) {
+    return properties[normalized_primary_key];
+  }
+
+  return null;
+}
+
+private function runtime_ui_apply_field_ui_state_to_form_state(
+  form_metadata: Json,
+  control_metadata: Json,
+  form_state: Json,
+  field_ui_state: Json
+): Json {
+  let next_form_state = form_state ?? {};
+  if (control_metadata == null || field_ui_state == null) {
+    return next_form_state;
+  }
+
+  let binding_path = Runtime.json_to_str(control_metadata["binding_path"]);
+
+  if (binding_path != "" && field_ui_state["value"] != null) {
+    return runtime_ui_assign_form_state_path(
+      form_metadata,
+      next_form_state,
+      binding_path,
+      field_ui_state["value"]
+    );
+  }
+
+  let control_id = Runtime.json_to_str(control_metadata["id"]);
+  if (control_id != "" && field_ui_state["value"] != null) {
+    next_form_state[control_id] = field_ui_state["value"];
+  }
+
+  return next_form_state;
+}
+
+private function runtime_ui_resolve_control_source_handler(control_metadata: Json): string {
+  if (control_metadata == null) {
+    return "";
+  }
+
+  let source = control_metadata["source"];
+  if (source != null) {
+    let source_name = Runtime.json_to_str(source["name"]);
+    if (source_name != "") {
+      return source_name;
+    }
+  }
+
+  return "";
+}
+
+private function runtime_ui_resolve_control_source_dispatch_target(control_metadata: Json): string {
+  if (control_metadata == null) {
+    return "";
+  }
+
+  let source = control_metadata["source"];
+  if (source != null) {
+    let dispatch_target = Runtime.json_to_str(source["dispatch_target"]);
+    if (dispatch_target != "") {
+      return dispatch_target;
+    }
+  }
+
+  return "";
+}
+
+private function runtime_ui_resolve_grid_filter_scalar(raw_value: Json): Json {
+  if (raw_value == null) {
+    return null;
+  }
+  if (raw_value["value"] != null) {
+    return runtime_ui_resolve_grid_filter_scalar(raw_value["value"]);
+  }
+  if (raw_value["query"] != null) {
+    return runtime_ui_resolve_grid_filter_scalar(raw_value["query"]);
+  }
+  if (raw_value["text"] != null) {
+    return runtime_ui_resolve_grid_filter_scalar(raw_value["text"]);
+  }
+
+  let normalized_text = Runtime.json_to_str(raw_value);
+  if (normalized_text != "") {
+    return normalized_text;
+  }
+
+  return raw_value;
+}
+
+private function runtime_ui_json_number_from_int(value: int): Json {
+  return Runtime.json_from_i64(value);
+}
+
+private function runtime_ui_normalize_numeric_json(raw_value: Json): Json {
+  if (raw_value == null) {
+    return null;
+  }
+
+  let normalized_text = Runtime.str_trim(Runtime.json_to_str(raw_value));
+  if (normalized_text == "") {
+    return null;
+  }
+
+  return Runtime.json_parse(normalized_text);
+}
+
+private function runtime_ui_resolve_grid_page_size(control_metadata: Json): int {
+  if (control_metadata == null) {
+    return 10;
+  }
+
+  let properties = control_metadata["properties"] ?? {};
+  let page_size = Runtime.json_to_i64(properties["page_size"]);
+  if (page_size > 0) {
+    return page_size;
+  }
+
+  let grow = Runtime.json_to_i64(control_metadata["grow"]);
+  if (grow <= 0) {
+    return 10;
+  }
+
+  let resolved_height_lines = Runtime.json_to_i64(properties["height_lines"]);
+  if (resolved_height_lines <= 0) {
+    resolved_height_lines = Runtime.json_to_i64(control_metadata["height_lines"]);
+  }
+  if (resolved_height_lines > 0) {
+    return resolved_height_lines;
+  }
+
+  return 10;
+}
+
+private function runtime_ui_fill_grid_row_placeholders(
+  rows: Json,
+  target_size: int,
+  row_count: int
+): Json {
+  if (row_count >= target_size) {
+    return rows;
+  }
+
+  rows[row_count] = {};
+  return runtime_ui_fill_grid_row_placeholders(rows, target_size, row_count + 1);
+}
+
+private function runtime_ui_pad_grid_rows_to_size(
+  grid_rows: Json,
+  raw_row_count: int,
+  target_size: int
+): Json {
+  if (target_size <= 0) {
+    return grid_rows;
+  }
+  if (raw_row_count >= target_size) {
+    return grid_rows;
+  }
+
+  let padded_rows: Json = [];
+  let padded_row_count = 0;
+  for (grid_row in grid_rows) {
+    padded_rows[padded_row_count] = grid_row;
+    padded_row_count = padded_row_count + 1;
+  }
+
+  return runtime_ui_fill_grid_row_placeholders(
+    padded_rows,
+    target_size,
+    padded_row_count
+  );
+}
+
+private function runtime_ui_build_control_source_input(
+  form_metadata: Json,
+  control_metadata: Json,
+  form_state: Json,
+  control_runtime_state: Json
+): Json {
+  let source_input = null;
+  if (control_metadata == null) {
+    return null;
+  }
+
+  let source = control_metadata["source"];
+  if (source != null) {
+    let source_arguments = source["arguments"] ?? [];
+    let source_argument_count = 0;
+    let resolved_source_argument = null;
+
+    for (source_argument in source_arguments) {
+      source_argument_count = source_argument_count + 1;
+      if (source_argument_count > 1) {
+        return null;
+      }
+      resolved_source_argument = runtime_ui_resolve_form_state_path(
+        form_metadata,
+        form_state,
+        Runtime.json_to_str(source_argument["path"])
+      );
+    }
+
+    if (source_argument_count == 1) {
+      source_input = resolved_source_argument;
+    }
+  }
+
+  if (source_input == null) {
+    let pagination_path = Runtime.json_to_str(control_metadata["pagination_path"]);
+    if (pagination_path != "") {
+      source_input = runtime_ui_resolve_form_state_path(form_metadata, form_state, pagination_path);
+    }
+  }
+
+  if (source_input == null) {
+    source_input = form_state;
+  }
+
+  let normalized_source_input = source_input ?? {};
+  let pagination_path = Runtime.json_to_str(control_metadata["pagination_path"]);
+  if (pagination_path != "") {
+    if (normalized_source_input["page"] == null) {
+      normalized_source_input["page"] = runtime_ui_json_number_from_int(1);
+    }
+    if (normalized_source_input["size"] == null) {
+      let properties = control_metadata["properties"] ?? {};
+      let default_page_size = Runtime.json_to_i64(properties["page_size"]);
+      if (default_page_size <= 0) {
+        default_page_size = runtime_ui_resolve_grid_page_size(control_metadata);
+        if (default_page_size <= 0) {
+          default_page_size = 10;
+        }
+      }
+      normalized_source_input["size"] = runtime_ui_json_number_from_int(default_page_size);
+    }
+  }
+
+  if (control_runtime_state == null) {
+    return normalized_source_input;
+  }
+
+  let normalized_filters = control_runtime_state["filters"] ?? {};
+  if (normalized_filters != null) {
+    normalized_source_input["filters"] = normalized_filters;
+    for (filter_key in normalized_filters) {
+      let normalized_filter_key = Runtime.json_to_str(filter_key);
+      if (normalized_filter_key == "") {
+        continue;
+      }
+      let scalar_filter_value = runtime_ui_resolve_grid_filter_scalar(
+        normalized_filters[normalized_filter_key]
+      );
+      if (scalar_filter_value == null) {
+        continue;
+      }
+      normalized_source_input[normalized_filter_key] = scalar_filter_value;
+      normalized_source_input["filter_" + normalized_filter_key] = scalar_filter_value;
+    }
+  }
+
+  normalized_source_input["filter_model"] = control_runtime_state["filterModel"];
+  normalized_source_input["search_text"] = control_runtime_state["searchQuery"];
+  normalized_source_input["sort_key"] = control_runtime_state["sortKey"];
+  normalized_source_input["sort_direction"] = control_runtime_state["sortDirection"];
+  normalized_source_input["sorts"] = control_runtime_state["sorts"];
+
+  return normalized_source_input;
+}
+
+private function runtime_ui_extract_grid_rows(source_result: Json): Json {
+  if (source_result == null) {
+    return [];
+  }
+  if (source_result["rows"] != null) {
+    return source_result["rows"];
+  }
+  return source_result;
+}
+
+private function runtime_ui_extract_grid_total_count(source_result: Json): Json {
+  if (source_result == null) {
+    return null;
+  }
+  if (source_result["total_count"] != null) {
+    return source_result["total_count"];
+  }
+  return null;
+}
+
+private function runtime_ui_execute_control_source(
+  session_id: string,
+  form_instance_id: string,
+  app_id: string,
+  form_id: string,
+  revision: int,
+  control_id: string,
+  control_kind: string,
+  control_metadata: Json,
+  source_handler: string,
+  source_input: Json
+): Json {
+  let source_dispatch_target = runtime_ui_resolve_control_source_dispatch_target(control_metadata);
+  if (source_dispatch_target == "") {
+    source_dispatch_target = source_handler;
+  }
+  let execution_context = runtime_ui_build_apply_execution_context(
+    session_id,
+    form_instance_id,
+    app_id,
+    form_id,
+    revision,
+    control_id,
+    control_kind,
+    "load",
+    source_handler,
+    source_dispatch_target,
+    "",
+    "",
+    null,
+    null,
+    source_input ?? {},
+    source_input ?? {},
+    {
+      "event": "load",
+      "context": {
+        "controlId": control_id,
+        "source": "grid"
+      }
+    }
+  );
+  let execution_result = runtime_ui_dispatch_handler(execution_context);
+  if (execution_result is null) {
+    return null;
+  }
+  return execution_result.form_state;
+}
+
+private function runtime_ui_sync_only_grid_event(control_kind: string, event_name: string): bool {
+  let normalized_control_kind = Runtime.json_to_str(control_kind);
+  let normalized_event_name = Runtime.json_to_str(event_name);
+
+  if (normalized_control_kind != "DataGrid" && normalized_control_kind != "Grid") {
+    return false;
+  }
+
+  if (normalized_event_name == "load") {
+    return true;
+  }
+
+  return normalized_event_name == "selection_changed"
+    || normalized_event_name == "selection_change";
+}
+
+private function runtime_ui_build_grid_response_envelope(
+  form_metadata: Json,
+  form_state: Json,
+  preferred_control_id: string?
+): Json {
+  if (form_metadata == null || form_state == null) {
+    return {};
+  }
+
+  let normalized_preferred_control_id = Runtime.json_to_str(preferred_control_id);
+  let controls = runtime_ui_form_controls(form_metadata);
+  if (normalized_preferred_control_id != "") {
+    let preferred_control_metadata = runtime_ui_find_control_metadata(
+      form_metadata,
+      normalized_preferred_control_id
+    );
+    let preferred_grid_response = runtime_ui_build_grid_response_for_control(
+      form_metadata,
+      form_state,
+      preferred_control_metadata
+    );
+    if (preferred_grid_response["rows"] != null) {
+      return preferred_grid_response;
+    }
+  }
+
+  for (control_metadata in controls) {
+    if (
+      normalized_preferred_control_id != ""
+      && Runtime.json_to_str(control_metadata["id"]) == normalized_preferred_control_id
+    ) {
+      continue;
+    }
+    let grid_response = runtime_ui_build_grid_response_for_control(
+      form_metadata,
+      form_state,
+      control_metadata
+    );
+    if (grid_response["rows"] != null) {
+      return grid_response;
+    }
+  }
+
+  return {};
+}
+
+private function runtime_ui_build_grid_response_for_control(
+  form_metadata: Json,
+  form_state: Json,
+  control_metadata: Json
+): Json {
+  if (form_metadata == null || form_state == null || control_metadata == null) {
+    return {};
+  }
+
+    let control_kind = Runtime.json_to_str(control_metadata["type"]);
+    if (control_kind != "DataGrid" && control_kind != "Grid") {
+      return {};
+    }
+
+    let control_id = Runtime.json_to_str(control_metadata["id"]);
+    if (control_id == "") {
+      return {};
+    }
+
+    let grid_rows = form_state[control_id];
+    if (grid_rows == null) {
+      return {};
+    }
+
+    let pagination_path = Runtime.json_to_str(control_metadata["pagination_path"]);
+    let pagination_state = runtime_ui_resolve_form_state_path(
+      form_metadata,
+      form_state,
+      pagination_path
+    );
+    let page = 0;
+    let has_page = false;
+    let page_size = 0;
+    let has_page_size = false;
+    if (pagination_state != null && pagination_state["page"] != null) {
+      page = Runtime.json_to_i64(pagination_state["page"]);
+      has_page = true;
+    }
+    if (pagination_state != null && pagination_state["size"] != null) {
+      page_size = Runtime.json_to_i64(pagination_state["size"]);
+      has_page_size = true;
+    }
+    let total_count = pagination_state != null ? pagination_state["total_count"] : null;
+    let row_count = 0;
+    for (_ in grid_rows) {
+      row_count = row_count + 1;
+    }
+    let start_row = 0;
+    if (has_page && has_page_size) {
+      start_row = ((page - 1) * page_size);
+    }
+
+    let normalized_total_count = total_count != null
+      ? runtime_ui_normalize_numeric_json(total_count)
+      : null;
+    if (normalized_total_count == null || Runtime.json_to_i64(normalized_total_count) <= 0) {
+      let inferred_total_count = start_row + row_count;
+      if (inferred_total_count < row_count) {
+        inferred_total_count = row_count;
+      }
+      normalized_total_count = runtime_ui_json_number_from_int(inferred_total_count);
+    }
+
+  return {
+    "rows": grid_rows,
+    "totalRows": normalized_total_count,
+    "startRow": runtime_ui_json_number_from_int(start_row),
+    "rowCount": runtime_ui_json_number_from_int(row_count)
+  };
+}
+
+private function runtime_ui_is_source_backed_grid_control(control_metadata: Json): bool {
+  if (control_metadata == null) {
+    return false;
+  }
+
+  let control_kind = Runtime.json_to_str(control_metadata["type"]);
+  if (control_kind != "DataGrid" && control_kind != "Grid") {
+    return false;
+  }
+
+  return Runtime.json_to_str(runtime_ui_resolve_control_source_handler(control_metadata)) != ""
+    || Runtime.json_to_str(runtime_ui_resolve_control_source_dispatch_target(control_metadata)) != "";
+}
+
+private function runtime_ui_copy_client_form_field(
+  client_form_state: Json,
+  copied_fields: Json,
+  form_metadata: Json,
+  form_state: Json,
+  binding_object: RuntimeObject?,
+  path: string
+): Json {
+  let normalized_path = Runtime.json_to_str(path);
+  if (normalized_path == "") {
+    return client_form_state;
+  }
+
+  let binding_entry = runtime_ui_resolve_form_binding_blueprint_entry(
+    form_metadata,
+    normalized_path
+  );
+  if (binding_entry == null) {
+    return client_form_state;
+  }
+
+  let field_name = Runtime.json_to_str(binding_entry["field_name"]);
+  if (field_name == "" || copied_fields[field_name] != null) {
+    return client_form_state;
+  }
+
+  copied_fields[field_name] = true;
+  let field_value = runtime_ui_resolve_form_state_path_with_binding_object(
+    form_metadata,
+    form_state,
+    binding_object,
+    normalized_path
+  );
+  if (field_value != null) {
+    client_form_state[field_name] = field_value;
+  }
+  return client_form_state;
+}
+
+private function runtime_ui_build_client_form_state(
+  form_metadata: Json,
+  form_state: Json
+): Json {
+  let normalized_form_state = form_state ?? {};
+  if (form_metadata == null) {
+    return normalized_form_state;
+  }
+
+  let client_form_state: Json = {};
+  let copied_fields: Json = {};
+  let binding_object = null;
+  let controls = runtime_ui_form_controls(form_metadata);
+  for (control_metadata in controls) {
+    if (!runtime_ui_is_source_backed_grid_control(control_metadata)) {
+      let binding_path = Runtime.json_to_str(control_metadata["binding_path"]);
+      if (binding_path != "") {
+        client_form_state = runtime_ui_copy_client_form_field(
+          client_form_state,
+          copied_fields,
+          form_metadata,
+          normalized_form_state,
+          binding_object,
+          binding_path
+        );
+        continue;
+      }
+
+      let control_id = Runtime.json_to_str(control_metadata["id"]);
+      if (control_id == ""
+        || copied_fields[control_id] != null
+        || normalized_form_state[control_id] == null) {
+        continue;
+      }
+      copied_fields[control_id] = true;
+      client_form_state[control_id] = normalized_form_state[control_id];
+      continue;
+    }
+    let control_id = Runtime.json_to_str(control_metadata["id"]);
+    if (control_id != "") {
+      client_form_state[control_id] = null;
+    }
+  }
+
+  let state_fields = form_metadata["state_fields"] ?? [];
+  for (state_field in state_fields) {
+    let field_name = Runtime.json_to_str(state_field["name"]);
+    if (
+      field_name == ""
+      || copied_fields[field_name] != null
+      || normalized_form_state[field_name] == null
+    ) {
+      continue;
+    }
+    copied_fields[field_name] = true;
+    client_form_state[field_name] = normalized_form_state[field_name];
+  }
+
+  return client_form_state;
+}
+
+private function runtime_ui_resolve_grid_row_id(row: Json): string {
+  if (row == null) {
+    return "";
+  }
+
+  let row_id = Runtime.json_to_str(row["id"]);
+  if (row_id != "") {
+    return row_id;
+  }
+  row_id = Runtime.json_to_str(row["__id"]);
+  if (row_id != "") {
+    return row_id;
+  }
+  row_id = Runtime.json_to_str(row["bg_code"]);
+  if (row_id != "") {
+    return row_id;
+  }
+  row_id = Runtime.json_to_str(row["reference_number"]);
+  if (row_id != "") {
+    return row_id;
+  }
+  row_id = Runtime.json_to_str(row["code"]);
+  if (row_id != "") {
+    return row_id;
+  }
+  return Runtime.json_to_str(row["key"]);
+}
+
+private function runtime_ui_build_grid_ui_state(
+  form_metadata: Json,
+  control_metadata: Json,
+  form_state: Json,
+  control_runtime_state: Json
+): Json {
+  if (control_metadata == null || form_state == null) {
+    return {};
+  }
+
+  let control_id = Runtime.json_to_str(control_metadata["id"]);
+  if (control_id == "") {
+    return {};
+  }
+
+  let grid_rows = form_state[control_id];
+  if (grid_rows == null) {
+    return {};
+  }
+
+  let grid_response = runtime_ui_build_grid_response_envelope(
+    {
+      "body": {
+        "controls": [control_metadata]
+      },
+      "state_fields": form_metadata["state_fields"]
+    },
+    form_state,
+    control_id
+  );
+  let grid_ui_state = {
+    "totalRows": grid_response["totalRows"],
+    "startRow": grid_response["startRow"],
+    "rowCount": grid_response["rowCount"]
+  };
+  let selection_path = Runtime.json_to_str(control_metadata["selection_path"]);
+  let selected_ids = control_runtime_state != null
+    ? control_runtime_state["selected"]
+    : null;
+  if (selected_ids != null) {
+    grid_ui_state["selected"] = selected_ids;
+  } else {
+    let selected_row = runtime_ui_resolve_form_state_path(
+      form_metadata,
+      form_state,
+      selection_path
+    );
+    let selected_row_id = runtime_ui_resolve_grid_row_id(selected_row);
+    if (selected_row_id != "") {
+      grid_ui_state["selected"] = [selected_row_id];
+      grid_ui_state["selectionRange"] = {
+        "startRowId": selected_row_id,
+        "endRowId": selected_row_id
+      };
+    }
+  }
+  if (control_runtime_state != null && control_runtime_state["selectionRange"] != null) {
+    grid_ui_state["selectionRange"] = control_runtime_state["selectionRange"];
+  }
+  if (control_runtime_state != null && control_runtime_state["activeCell"] != null) {
+    grid_ui_state["activeCell"] = control_runtime_state["activeCell"];
+  }
+  if (control_runtime_state != null && control_runtime_state["filters"] != null) {
+    grid_ui_state["filters"] = control_runtime_state["filters"];
+  }
+  if (control_runtime_state != null && control_runtime_state["filterModel"] != null) {
+    grid_ui_state["filterModel"] = control_runtime_state["filterModel"];
+  }
+  if (control_runtime_state != null && control_runtime_state["searchQuery"] != null) {
+    grid_ui_state["searchQuery"] = control_runtime_state["searchQuery"];
+  }
+  if (control_runtime_state != null && control_runtime_state["sortKey"] != null) {
+    grid_ui_state["sortKey"] = control_runtime_state["sortKey"];
+  }
+  if (control_runtime_state != null && control_runtime_state["sortDirection"] != null) {
+    grid_ui_state["sortDirection"] = control_runtime_state["sortDirection"];
+  }
+  if (control_runtime_state != null && control_runtime_state["sorts"] != null) {
+    grid_ui_state["sorts"] = control_runtime_state["sorts"];
+  }
+
+  let pagination_path = Runtime.json_to_str(control_metadata["pagination_path"]);
+  let pagination_state = runtime_ui_resolve_form_state_path(
+    form_metadata,
+    form_state,
+    pagination_path
+  );
+  if (pagination_state != null) {
+    if (pagination_state["page"] != null) {
+      grid_ui_state["page"] = runtime_ui_normalize_numeric_json(pagination_state["page"]);
+    }
+    if (pagination_state["size"] != null) {
+      grid_ui_state["pageSize"] = runtime_ui_normalize_numeric_json(pagination_state["size"]);
+    }
+  } else if (control_runtime_state != null) {
+    if (control_runtime_state["page"] != null) {
+      grid_ui_state["page"] = runtime_ui_normalize_numeric_json(control_runtime_state["page"]);
+    }
+    if (control_runtime_state["pageSize"] != null) {
+      grid_ui_state["pageSize"] = runtime_ui_normalize_numeric_json(
+        control_runtime_state["pageSize"]
+      );
+    }
+  }
+
+  return grid_ui_state;
+}
+
+private function runtime_ui_build_button_ui_state(
+  form_metadata: Json,
+  button_metadata: Json,
+  form_state: Json,
+  button_runtime_state: Json
+): Json {
+  if (button_metadata == null && button_runtime_state == null) {
+    return {};
+  }
+
+  let button_ui_state: Json = {};
+  let normalized_button_runtime_state = button_runtime_state ?? {};
+
+  let requires_selection = button_metadata["requires_selection"] == true;
+
+  let metadata_visible = runtime_ui_resolve_control_metadata_flag(
+    button_metadata,
+    "visible"
+  );
+  if (metadata_visible == null) {
+    let metadata_hidden = runtime_ui_resolve_control_metadata_flag(
+      button_metadata,
+      "hidden"
+    );
+    if (metadata_hidden != null) {
+      metadata_visible = metadata_hidden != true;
+    }
+  }
+
+  if (normalized_button_runtime_state["visible"] != null) {
+    button_ui_state["visible"] = normalized_button_runtime_state["visible"] == true;
+  } else if (metadata_visible != null) {
+    button_ui_state["visible"] = metadata_visible == true;
+  }
+
+  let metadata_disabled = runtime_ui_resolve_control_metadata_flag(
+    button_metadata,
+    "disabled"
+  );
+  if (metadata_disabled == null) {
+    let metadata_enabled = runtime_ui_resolve_control_metadata_flag(
+      button_metadata,
+      "enabled"
+    );
+    if (metadata_enabled != null) {
+      metadata_disabled = metadata_enabled != true;
+    }
+  }
+
+  let selection_disabled = null;
+  let selection_path = Runtime.json_to_str(button_metadata["selection_path"]);
+  if (selection_path != "") {
+    selection_disabled = runtime_ui_resolve_form_state_path(
+      form_metadata,
+      form_state,
+      selection_path
+    ) == null;
+  } else if (requires_selection) {
+    selection_disabled = true;
+  }
+
+  if (normalized_button_runtime_state["disabled"] != null) {
+    button_ui_state["disabled"] = normalized_button_runtime_state["disabled"] == true;
+  } else if (selection_disabled != null) {
+    button_ui_state["disabled"] = selection_disabled == true;
+  } else if (metadata_disabled != null) {
+    button_ui_state["disabled"] = metadata_disabled == true;
+  }
+
+  if (normalized_button_runtime_state["pending"] != null) {
+    button_ui_state["pending"] = normalized_button_runtime_state["pending"] == true;
+  }
+
+  return button_ui_state;
+}
+
+private function runtime_ui_build_field_ui_state(
+  contract: RuntimeUiControlRuntimeContract,
+  control_metadata: Json,
+  form_metadata: Json,
+  form_state: Json,
+  binding_object: RuntimeObject?,
+  control_runtime_state: Json
+): Json {
+  if (control_metadata == null && control_runtime_state == null) {
+    return {};
+  }
+
+  let field_ui_state: Json = {};
+  let normalized_control_runtime_state = control_runtime_state ?? {};
+  let normalized_form_state = form_state ?? {};
+  if (contract.supports_value) {
+    let binding_path = Runtime.json_to_str(control_metadata["binding_path"]);
+    if (binding_path != "") {
+      field_ui_state["value"] = runtime_ui_resolve_form_state_path_with_binding_object(
+        form_metadata,
+        form_state,
+        binding_object,
+        binding_path
+      );
+    } else if (Runtime.json_to_str(contract.control_id) != "") {
+      field_ui_state["value"] = normalized_form_state[contract.control_id];
+    }
+  }
+  if (contract.supports_selected_key && normalized_control_runtime_state["selectedKey"] != null) {
+    field_ui_state["selectedKey"] = normalized_control_runtime_state["selectedKey"];
+  }
+  if (contract.supports_associated && normalized_control_runtime_state["associated"] != null) {
+    field_ui_state["associated"] = normalized_control_runtime_state["associated"];
+  }
+
+  let metadata_readonly = runtime_ui_resolve_control_metadata_flag(
+    control_metadata,
+    "readonly"
+  );
+  if (contract.supports_read_only && metadata_readonly != null) {
+    field_ui_state["readOnly"] = metadata_readonly == true;
+  } else if (contract.supports_read_only && normalized_control_runtime_state["readOnly"] != null) {
+    field_ui_state["readOnly"] = normalized_control_runtime_state["readOnly"];
+  }
+
+  let metadata_display_only = runtime_ui_resolve_control_metadata_flag(
+    control_metadata,
+    "display_only"
+  );
+  if (contract.supports_display_only && metadata_display_only != null) {
+    field_ui_state["displayOnly"] = metadata_display_only == true;
+  } else if (contract.supports_display_only && normalized_control_runtime_state["displayOnly"] != null) {
+    field_ui_state["displayOnly"] = normalized_control_runtime_state["displayOnly"];
+  }
+
+  let metadata_disabled = runtime_ui_resolve_control_metadata_flag(
+    control_metadata,
+    "disabled"
+  );
+  if (metadata_disabled == null) {
+    let metadata_enabled = runtime_ui_resolve_control_metadata_flag(
+      control_metadata,
+      "enabled"
+    );
+    if (metadata_enabled != null) {
+      metadata_disabled = metadata_enabled != true;
+    }
+  }
+  if (contract.supports_disabled && metadata_disabled != null) {
+    field_ui_state["disabled"] = metadata_disabled == true;
+  } else if (contract.supports_disabled && normalized_control_runtime_state["disabled"] != null) {
+    field_ui_state["disabled"] = normalized_control_runtime_state["disabled"];
+  }
+  return field_ui_state;
+}
+
+private function runtime_ui_find_control_runtime_update(
+  control_runtime_updates: Json,
+  control_id: string
+): Json {
+  let normalized_control_id = Runtime.json_to_str(control_id);
+  if (normalized_control_id == "") {
+    return null;
+  }
+
+  let runtime_updates = control_runtime_updates ?? [];
+  for (runtime_update in runtime_updates) {
+    if (Runtime.json_to_str(runtime_update["id"]) == normalized_control_id) {
+      return runtime_update["runtime_state"];
+    }
+  }
+
+  return null;
+}
+
+private function runtime_ui_normalize_grid_source_result(
+  control_metadata: Json,
+  source_input: Json,
+  source_result: Json
+): Json {
+  if (source_result == null) {
+    return null;
+  }
+
+  let normalized_source_result = source_result;
+  let grid_rows = runtime_ui_extract_grid_rows(source_result) ?? [];
+  let total_count = runtime_ui_extract_grid_total_count(source_result);
+  let pagination_path = Runtime.json_to_str(control_metadata["pagination_path"]);
+  if (pagination_path == "") {
+    return normalized_source_result;
+  }
+
+  let requested_page = Runtime.json_to_i64(source_input["page"]);
+  if (requested_page <= 0) {
+    requested_page = 1;
+  }
+  let requested_size = Runtime.json_to_i64(source_input["size"]);
+  if (requested_size <= 0) {
+    requested_size = runtime_ui_resolve_grid_page_size(control_metadata);
+    if (requested_size <= 0) {
+      requested_size = 10;
+    }
+  }
+
+  let raw_row_count = 0;
+  for (_ in grid_rows) {
+    raw_row_count = raw_row_count + 1;
+  }
+  let start_row = (requested_page - 1) * requested_size;
+  if (start_row < 0) {
+    start_row = 0;
+  }
+
+  if (total_count == null || Runtime.json_to_i64(total_count) <= 0) {
+    let inferred_total_count = start_row + raw_row_count;
+    if (inferred_total_count < raw_row_count) {
+      inferred_total_count = raw_row_count;
+    }
+    total_count = runtime_ui_json_number_from_int(inferred_total_count);
+  }
+
+  if (raw_row_count <= requested_size) {
+    normalized_source_result["rows"] = runtime_ui_pad_grid_rows_to_size(
+      grid_rows,
+      raw_row_count,
+      requested_size
+    );
+    normalized_source_result["total_count"] = total_count;
+    normalized_source_result["rowCount"] = runtime_ui_json_number_from_int(requested_size);
+    return normalized_source_result;
+  }
+  let limited_rows: Json = [];
+  let limited_row_count = 0;
+  let row_index = 0;
+  for (grid_row in grid_rows) {
+    if (row_index >= start_row && limited_row_count < requested_size) {
+      limited_rows[limited_row_count] = grid_row;
+      limited_row_count = limited_row_count + 1;
+    }
+    row_index = row_index + 1;
+  }
+
+  limited_rows = runtime_ui_pad_grid_rows_to_size(
+    limited_rows,
+    limited_row_count,
+    requested_size
+  );
+
+  normalized_source_result["rows"] = limited_rows;
+  normalized_source_result["total_count"] = total_count;
+  normalized_source_result["rowCount"] = runtime_ui_json_number_from_int(requested_size);
+  return normalized_source_result;
+}
+
+private function runtime_ui_build_state_sync_ui_state(
+  form_instance_id: string,
+  form_metadata: Json,
+  form_state: Json,
+  control_runtime_updates: Json,
+  persisted_ui_state: Json
+): Json {
+  if (form_metadata == null || form_state == null) {
+    return {};
+  }
+
+  let ui_state: Json = {};
+  let controls = runtime_ui_form_controls(form_metadata);
+  let binding_object = null;
+  let indexed_persisted_ui_state = persisted_ui_state ?? {};
+
+  for (control_metadata in controls) {
+    let contract = runtime_ui_build_control_runtime_contract(control_metadata);
+    let control_kind = contract.control_kind;
+    let control_id = contract.control_id;
+    if (control_id == "") {
+      continue;
+    }
+
+    let control_runtime_state = null;
+    if (control_runtime_updates != null) {
+      control_runtime_state = runtime_ui_find_control_runtime_update(
+        control_runtime_updates,
+        control_id
+      );
+    }
+    if (control_runtime_state == null) {
+      control_runtime_state = runtime_ui_resolve_persisted_control_runtime_state(
+        indexed_persisted_ui_state,
+        control_id
+      );
+    }
+
+    if (control_kind == "DataGrid" || control_kind == "Grid") {
+      ui_state[control_id] = runtime_ui_build_grid_ui_state(
+        form_metadata,
+        control_metadata,
+        form_state,
+        control_runtime_state
+      );
+      continue;
+    }
+
+    let field_ui_state = runtime_ui_build_field_ui_state(
+      contract,
+      control_metadata,
+      form_metadata,
+      form_state,
+      binding_object,
+      control_runtime_state
+    );
+    if (field_ui_state != null) {
+      ui_state[control_id] = field_ui_state;
+    }
+  }
+
+  let buttons = form_metadata["buttons"] ?? [];
+  for (button_metadata in buttons) {
+    let button_id = Runtime.json_to_str(button_metadata["id"]);
+    if (button_id == "") {
+      continue;
+    }
+
+    let button_runtime_state = null;
+    if (control_runtime_updates != null) {
+      button_runtime_state = runtime_ui_find_control_runtime_update(
+        control_runtime_updates,
+        button_id
+      );
+    }
+    if (button_runtime_state == null) {
+      button_runtime_state = runtime_ui_resolve_persisted_control_runtime_state(
+        indexed_persisted_ui_state,
+        button_id
+      );
+    }
+
+    let button_ui_state = runtime_ui_build_button_ui_state(
+      form_metadata,
+      button_metadata,
+      form_state,
+      button_runtime_state
+    );
+    if (button_ui_state != null) {
+      ui_state[button_id] = button_ui_state;
+    }
+  }
+
+  return ui_state;
+}
+
+private function runtime_ui_sync_control_sessions(
+  session_id: string,
+  form_instance_id: string,
+  app_id: string,
+  form_id: string,
+  revision: int,
+  form_metadata: Json,
+  form_state: Json,
+  request_ui_state: Json,
+  persisted_ui_state: Json,
+  preferred_control_id: string?,
+  preferred_source_handler: string?
+): RuntimeUiControlSyncResult? {
+  if (Runtime.json_to_str(form_instance_id) == "" || form_metadata == null) {
+    return null;
+  }
+
+  let sync_result = Runtime.json_parse("{}");
+  let next_form_state = form_state ?? {};
+  let normalized_preferred_control_id = Runtime.json_to_str(preferred_control_id);
+  let normalized_preferred_source_handler = Runtime.json_to_str(preferred_source_handler);
+  if (normalized_preferred_control_id == "") {
+    normalized_preferred_control_id = runtime_ui_resolve_preferred_grid_control_id(
+      form_metadata,
+      request_ui_state,
+      null
+    );
+  }
+  let binding_object = null;
+  let control_runtime_updates: Json = [];
+  let control_runtime_update_count = 0;
+  let controls = runtime_ui_form_controls(form_metadata);
+  let buttons = form_metadata["buttons"] ?? [];
+  let indexed_persisted_ui_state = persisted_ui_state ?? {};
+
+  for (control_metadata in controls) {
+    let contract = runtime_ui_build_control_runtime_contract(control_metadata);
+    let control_id = contract.control_id;
+    if (control_id == "") {
+      continue;
+    }
+
+    let persisted_control_runtime_state = runtime_ui_resolve_persisted_control_runtime_state(
+      indexed_persisted_ui_state,
+      control_id
+    );
+
+    let control_kind = contract.control_kind;
+    let control_request_ui_state = runtime_ui_resolve_control_request_ui_state(
+      request_ui_state,
+      control_id
+    );
+    if (
+      control_kind != "DataGrid"
+      && control_kind != "Grid"
+      && control_request_ui_state != null
+    ) {
+      next_form_state = runtime_ui_apply_field_ui_state_to_form_state(
+        form_metadata,
+        control_metadata,
+        next_form_state,
+        control_request_ui_state
+      );
+    }
+    if (
+      (control_kind == "DataGrid" || control_kind == "Grid")
+      && control_request_ui_state != null
+    ) {
+      next_form_state = runtime_ui_apply_grid_ui_state_to_form_state(
+        form_metadata,
+        control_metadata,
+        next_form_state,
+        control_request_ui_state
+      );
+    }
+    let source_handler = runtime_ui_resolve_control_source_handler(control_metadata);
+    if (
+      normalized_preferred_source_handler != ""
+      && normalized_preferred_control_id != ""
+      && control_id == normalized_preferred_control_id
+    ) {
+      source_handler = normalized_preferred_source_handler;
+    }
+    let source_dispatch_target = runtime_ui_resolve_control_source_dispatch_target(
+      control_metadata
+    );
+    if (
+      (control_kind == "DataGrid" || control_kind == "Grid")
+      && (source_handler != "" || source_dispatch_target != "")
+    ) {
+      if (
+        normalized_preferred_control_id != ""
+        && control_id != normalized_preferred_control_id
+      ) {
+        continue;
+      }
+      if (
+        runtime_ui_dispatch_target_requires_handler(source_dispatch_target)
+        && source_handler == ""
+      ) {
+        return null;
+      }
+      let next_control_runtime_state = runtime_ui_build_control_runtime_state(
+        form_metadata,
+        control_metadata,
+        next_form_state,
+        binding_object,
+        persisted_control_runtime_state,
+        control_request_ui_state
+      );
+      let source_input = runtime_ui_build_control_source_input(
+        form_metadata,
+        control_metadata,
+        next_form_state,
+        next_control_runtime_state
+      );
+      if (source_input == null) {
+        return null;
+      }
+
+      let source_result = runtime_ui_execute_control_source(
+        session_id,
+        form_instance_id,
+        app_id,
+        form_id,
+        revision,
+        control_id,
+        control_kind,
+        control_metadata,
+        source_handler,
+        source_input
+      );
+      if (source_result == null) {
+        return null;
+      }
+      source_result = runtime_ui_normalize_grid_source_result(
+        control_metadata,
+        source_input,
+        source_result
+      );
+
+      next_form_state[control_id] = runtime_ui_extract_grid_rows(source_result);
+      let total_count = runtime_ui_extract_grid_total_count(source_result);
+      let pagination_path = Runtime.json_to_str(control_metadata["pagination_path"]);
+      if (
+        total_count != null
+        && (pagination_path == "state.limiter" || pagination_path == "form.limiter")
+        && next_form_state["limiter"] != null
+      ) {
+        let limiter_state = next_form_state["limiter"];
+        limiter_state["total_count"] = runtime_ui_normalize_numeric_json(total_count);
+        next_form_state["limiter"] = limiter_state;
+      }
+      if (next_control_runtime_state["pagination"] != null && total_count != null) {
+        let next_pagination_state = next_control_runtime_state["pagination"];
+        next_pagination_state["total_count"] = runtime_ui_normalize_numeric_json(total_count);
+        next_control_runtime_state["pagination"] = next_pagination_state;
+      }
+      if (total_count != null) {
+        next_control_runtime_state["totalRows"] = runtime_ui_normalize_numeric_json(total_count);
+      }
+      if (!runtime_ui_control_runtime_state_matches(
+        persisted_control_runtime_state,
+        next_control_runtime_state
+      )) {
+        control_runtime_updates[control_runtime_update_count] = {
+          "id": control_id,
+          "revision": revision,
+          "runtime_state": next_control_runtime_state
+        };
+        control_runtime_update_count = control_runtime_update_count + 1;
+      }
+      continue;
+    }
+    let next_control_runtime_state = runtime_ui_build_control_runtime_state(
+      form_metadata,
+      control_metadata,
+      next_form_state,
+      binding_object,
+      persisted_control_runtime_state,
+      control_request_ui_state
+    );
+    if (!runtime_ui_control_runtime_state_matches(
+      persisted_control_runtime_state,
+      next_control_runtime_state
+    )) {
+      control_runtime_updates[control_runtime_update_count] = {
+        "id": control_id,
+        "revision": revision,
+        "runtime_state": next_control_runtime_state
+      };
+      control_runtime_update_count = control_runtime_update_count + 1;
+    }
+  }
+
+  for (button_metadata in buttons) {
+    let button_id = Runtime.json_to_str(button_metadata["id"]);
+    if (button_id == "") {
+      continue;
+    }
+
+    let persisted_button_runtime_state = runtime_ui_resolve_persisted_control_runtime_state(
+      indexed_persisted_ui_state,
+      button_id
+    );
+    let next_button_runtime_state = runtime_ui_build_button_runtime_state_snapshot(
+      button_metadata,
+      persisted_button_runtime_state,
+      null
+    );
+    if (!runtime_ui_control_runtime_state_matches(
+      persisted_button_runtime_state,
+      next_button_runtime_state
+    )) {
+      control_runtime_updates[control_runtime_update_count] = {
+        "id": button_id,
+        "revision": revision,
+        "runtime_state": next_button_runtime_state
+      };
+      control_runtime_update_count = control_runtime_update_count + 1;
+    }
+  }
+
+  sync_result["form_state"] = next_form_state;
+  sync_result["control_runtime_updates"] = control_runtime_updates;
+  sync_result["grid_response"] = runtime_ui_build_grid_response_envelope(
+    form_metadata,
+    next_form_state,
+    normalized_preferred_control_id
+  );
+  return sync_result;
+}
+
+private function runtime_ui_resolve_preferred_grid_control_id(
+  form_metadata: Json,
+  request_ui_state: Json,
+  persisted_ui_state: Json
+): string {
+  let primary_control_metadata = runtime_ui_find_control_metadata(form_metadata, "ui");
+  if (primary_control_metadata != null) {
+    let primary_contract = runtime_ui_build_control_runtime_contract(primary_control_metadata);
+    let primary_control_kind = primary_contract.control_kind;
+    if (
+      (primary_control_kind == "DataGrid" || primary_control_kind == "Grid")
+      && runtime_ui_is_source_backed_grid_control(primary_control_metadata)
+    ) {
+      return "ui";
+    }
+  }
+
+  let controls = runtime_ui_form_controls(form_metadata);
+
+  for (control_metadata in controls) {
+    let contract = runtime_ui_build_control_runtime_contract(control_metadata);
+    let control_id = contract.control_id;
+    let control_kind = contract.control_kind;
+    if (control_id == "") {
+      continue;
+    }
+    if (control_kind != "DataGrid" && control_kind != "Grid") {
+      continue;
+    }
+    if (!runtime_ui_is_source_backed_grid_control(control_metadata)) {
+      continue;
+    }
+    if (request_ui_state != null && request_ui_state[control_id] != null) {
+      return control_id;
+    }
+  }
+
+  for (control_metadata in controls) {
+    let contract = runtime_ui_build_control_runtime_contract(control_metadata);
+    let control_id = contract.control_id;
+    let control_kind = contract.control_kind;
+    if (control_id == "") {
+      continue;
+    }
+    if (control_kind != "DataGrid" && control_kind != "Grid") {
+      continue;
+    }
+    if (!runtime_ui_is_source_backed_grid_control(control_metadata)) {
+      continue;
+    }
+    if (persisted_ui_state != null && persisted_ui_state[control_id] != null) {
+      return control_id;
+    }
+  }
+
+  return "";
+}
+
+private function runtime_ui_apply_request_ui_state_to_form_state(
+  session_id: string,
+  form_instance_id: string,
+  app_id: string,
+  form_id: string,
+  revision: int,
+  form_metadata: Json,
+  form_state: Json,
+  request_ui_state: Json,
+  persisted_ui_state: Json
+): Json? {
+  if (Runtime.json_to_str(form_instance_id) == "" || form_metadata == null) {
+    return null;
+  }
+
+  let next_form_state = form_state ?? {};
+  let binding_object = null;
+  let controls = runtime_ui_form_controls(form_metadata);
+  let indexed_persisted_ui_state = persisted_ui_state ?? {};
+
+  for (control_metadata in controls) {
+    let contract = runtime_ui_build_control_runtime_contract(control_metadata);
+    let control_id = contract.control_id;
+    if (control_id == "") {
+      continue;
+    }
+
+    let persisted_control_runtime_state = runtime_ui_resolve_persisted_control_runtime_state(
+      indexed_persisted_ui_state,
+      control_id
+    );
+
+    let control_kind = contract.control_kind;
+    let control_request_ui_state = runtime_ui_resolve_control_request_ui_state(
+      request_ui_state,
+      control_id
+    );
+    if (
+      control_kind != "DataGrid"
+      && control_kind != "Grid"
+      && control_request_ui_state != null
+    ) {
+      next_form_state = runtime_ui_apply_field_ui_state_to_form_state(
+        form_metadata,
+        control_metadata,
+        next_form_state,
+        control_request_ui_state
+      );
+    }
+    if (
+      (control_kind == "DataGrid" || control_kind == "Grid")
+      && control_request_ui_state != null
+    ) {
+      next_form_state = runtime_ui_apply_grid_ui_state_to_form_state(
+        form_metadata,
+        control_metadata,
+        next_form_state,
+        control_request_ui_state
+      );
+    }
+    let source_handler = runtime_ui_resolve_control_source_handler(control_metadata);
+    let source_dispatch_target = runtime_ui_resolve_control_source_dispatch_target(
+      control_metadata
+    );
+    if (
+      (control_kind == "DataGrid" || control_kind == "Grid")
+      && (source_handler != "" || source_dispatch_target != "")
+    ) {
+      if (
+        runtime_ui_dispatch_target_requires_handler(source_dispatch_target)
+        && source_handler == ""
+      ) {
+        return null;
+      }
+      let next_control_runtime_state = runtime_ui_build_control_runtime_state(
+        form_metadata,
+        control_metadata,
+        next_form_state,
+        binding_object,
+        persisted_control_runtime_state,
+        control_request_ui_state
+      );
+      let source_input = runtime_ui_build_control_source_input(
+        form_metadata,
+        control_metadata,
+        next_form_state,
+        next_control_runtime_state
+      );
+      if (source_input == null) {
+        return null;
+      }
+
+      let source_result = runtime_ui_execute_control_source(
+        session_id,
+        form_instance_id,
+        app_id,
+        form_id,
+        revision,
+        control_id,
+        control_kind,
+        control_metadata,
+        source_handler,
+        source_input
+      );
+      if (source_result == null) {
+        return null;
+      }
+      source_result = runtime_ui_normalize_grid_source_result(
+        control_metadata,
+        source_input,
+        source_result
+      );
+
+      next_form_state[control_id] = runtime_ui_extract_grid_rows(source_result);
+      let total_count = runtime_ui_extract_grid_total_count(source_result);
+      let pagination_path = Runtime.json_to_str(control_metadata["pagination_path"]);
+      if (
+        total_count != null
+        && (pagination_path == "state.limiter" || pagination_path == "form.limiter")
+        && next_form_state["limiter"] != null
+      ) {
+        let limiter_state = next_form_state["limiter"];
+        limiter_state["total_count"] = runtime_ui_normalize_numeric_json(total_count);
+        next_form_state["limiter"] = limiter_state;
+      }
+    }
+  }
+
+  return next_form_state;
+}
+
+private function runtime_ui_touch_session_context(
+  app_session: AppSession,
+  form_session: FormSession,
+  expected_revision: int,
+  session_context: Json
+): bool {
+  if (app_session is null || form_session is null) {
+    return false;
+  }
+
+  app_session["active"] = true;
+  form_session["active"] = true;
+  return runtime_ui_compare_and_touch_session_context(
+    app_session,
+    form_session,
+    expected_revision,
+    session_context
+  );
+}
+
+private function runtime_ui_lookup_origin_value(
+  origin: Json,
+  snake_key: string,
+  camel_key: string
+): Json {
+  if (origin == null) {
+    return null;
+  }
+  if (origin[snake_key] != null) {
+    return origin[snake_key];
+  }
+  return origin[camel_key];
+}
+
+private function runtime_ui_normalize_lookup_associated_fields(associated_fields: Json): Json {
+  let normalized: Json = [];
+  let entries = associated_fields ?? [];
+  let normalized_count = 0;
+
+  for (entry in entries) {
+    let key = Runtime.json_to_str(entry["key"]);
+    if (key == "") {
+      key = Runtime.json_to_str(entry["field"]);
+    }
+    if (key == "") {
+      key = Runtime.json_to_str(entry["id"]);
+    }
+    if (key == "") {
+      key = Runtime.json_to_str(entry);
+    }
+    if (key == "") {
+      continue;
+    }
+
+    normalized[normalized_count] = {
+      "key": key,
+      "label": key
+    };
+    normalized_count = normalized_count + 1;
+  }
+
+  return normalized;
+}
+
+private function runtime_ui_resolve_lookup_table(
+  control_metadata: Json,
+  request_table: string,
+  request_origin: Json
+): string {
+  let normalized_request_table = Runtime.json_to_str(request_table);
+  if (normalized_request_table != "") {
+    return normalized_request_table;
+  }
+  let origin_table = Runtime.json_to_str(
+    runtime_ui_lookup_origin_value(request_origin, "table", "tableName")
+  );
+  if (origin_table != "") {
+    return origin_table;
+  }
+  if (control_metadata == null) {
+    return "";
+  }
+
+  let resolved_table = Runtime.json_to_str(control_metadata["table"]);
+  if (resolved_table != "") {
+    return resolved_table;
+  }
+  return "";
+}
+
+private function runtime_ui_resolve_lookup_field(
+  control_metadata: Json,
+  request_field: string,
+  request_origin: Json
+): string? {
+  let normalized_request_field = Runtime.json_to_str(request_field);
+  if (normalized_request_field != "") {
+    return normalized_request_field;
+  }
+  let origin_field = Runtime.json_to_str(
+    runtime_ui_lookup_origin_value(request_origin, "field", "fieldName")
+  );
+  if (origin_field != "") {
+    return origin_field;
+  }
+  if (control_metadata == null) {
+    return null;
+  }
+
+  let resolved_field = Runtime.json_to_str(control_metadata["field"]);
+  if (resolved_field != "") {
+    return resolved_field;
+  }
+  resolved_field = Runtime.json_to_str(control_metadata["binding_path"]);
+  if (resolved_field != "") {
+    return resolved_field;
+  }
+  return null;
+}
+
+private function runtime_ui_resolve_lookup_associated_fields(
+  control_metadata: Json,
+  request_associated_fields: Json,
+  request_origin: Json
+): Json {
+  let normalized_request_fields = runtime_ui_normalize_lookup_associated_fields(
+    request_associated_fields
+  );
+  if (normalized_request_fields != [] && normalized_request_fields != null) {
+    return normalized_request_fields;
+  }
+  let origin_associated_fields = runtime_ui_normalize_lookup_associated_fields(
+    runtime_ui_lookup_origin_value(request_origin, "associated_fields", "associatedFields")
+  );
+  if (origin_associated_fields != [] && origin_associated_fields != null) {
+    return origin_associated_fields;
+  }
+  if (control_metadata == null) {
+    return [];
+  }
+
+  let metadata_fields = control_metadata["associated_fields"];
+  return runtime_ui_normalize_lookup_associated_fields(metadata_fields);
+}
+
+private function runtime_ui_resolve_lookup_display_field(
+  control_metadata: Json,
+  request_origin: Json,
+  lookup_field: string?,
+  associated_fields: Json
+): string? {
+  let request_display_field = Runtime.json_to_str(
+    runtime_ui_lookup_origin_value(request_origin, "display_field", "displayField")
+  );
+  if (request_display_field != "") {
+    return request_display_field;
+  }
+  let normalized_lookup_field = Runtime.json_to_str(lookup_field);
+  if (normalized_lookup_field != "") {
+    return normalized_lookup_field;
+  }
+  if (control_metadata != null) {
+    let display_field = Runtime.json_to_str(control_metadata["display_field"]);
+    if (display_field != "") {
+      return display_field;
+    }
+  }
+
+  for (associated_field in associated_fields ?? []) {
+    let associated_key = Runtime.json_to_str(associated_field["key"]);
+    if (associated_key != "") {
+      return associated_key;
+    }
+  }
+
+  return null;
+}

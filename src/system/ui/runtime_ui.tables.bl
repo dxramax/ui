@@ -1,0 +1,33 @@
+// Canonical persisted runtime UI session tables.
+
+table AppSession {
+    field session_id: string key origin;
+    field app_id: string key;
+    field user_id: string? max_length(120);
+    field tenant_id: string? max_length(120);
+    field security_context: Json?;
+    field active: bool default(true);
+    field created_at: datetime default(now()) origin;
+    field last_seen_at: datetime default(now());
+    field expires_at: datetime?;
+}
+
+table FormSession {
+    field form_instance_id: string key origin;
+    field session_id: string key;
+    field app_id: string key;
+    field form_id: string key;
+    field user_id: string? max_length(120);
+    field tenant_id: string? max_length(120);
+    field security_context: Json?;
+    field revision: int default(1);
+    field binding_type: string? max_length(255);
+    field binding_state: Json?;
+    field open_args: Json?;
+    field state_sync: Json?;
+    field messages: Json?;
+    field active: bool default(true);
+    field created_at: datetime default(now()) origin;
+    field last_seen_at: datetime default(now());
+    field expires_at: datetime?;
+}

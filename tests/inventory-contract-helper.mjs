@@ -1,0 +1,148 @@
+export const expectedUiPackageFiles = [
+  '.gitignore',
+  'README.md',
+  'nezam.package.json',
+  'package.json',
+  'reference.json',
+  'scripts/engine-root.mjs',
+  'scripts/nzm.mjs',
+  'src/system/object_guard/object_guard.classes.bl',
+  'src/system/object_guard/object_guard.functions.bl',
+  'src/system/object_guard/object_guard.tables.bl',
+  'src/system/runtime_object/runtime_object.functions.bl',
+  'src/system/runtime_object/runtime_object.types.bl',
+  'src/system/ui/runtime.bl',
+  'src/system/ui/runtime_ui.binding.functions.bl',
+  'src/system/ui/runtime_ui.controls.functions.bl',
+  'src/system/ui/runtime_ui.execution.functions.bl',
+  'src/system/ui/runtime_ui.functions.bl',
+  'src/system/ui/runtime_ui.messages.bl',
+  'src/system/ui/runtime_ui.metadata.functions.bl',
+  'src/system/ui/runtime_ui.tables.bl',
+  'src/system/ui/runtime_ui.types.bl',
+  'src/system/ui/runtime_ui_dispatch.functions.bl',
+  'src/system/ui/runtime_ui_session.functions.bl',
+  'tests/consumer-contract-helper.mjs',
+  'tests/consumer-path-contract-helper.mjs',
+  'tests/inventory-contract-helper.mjs',
+  'tests/manifest-contract-helper.mjs',
+  'tests/package-boundary-helper.mjs',
+  'tests/package-boundary.test.mjs',
+  'tests/packed-artifact-helper.mjs',
+  'tests/packed-install-contract.test.mjs',
+  'tests/publish-boundary-helper.mjs',
+  'tests/route-contract-helper.mjs',
+  'tests/runtime-ui-binding-sized-type-runtime.test.mjs',
+  'tests/runtime-ui-binding-type-analysis-runtime.test.mjs',
+  'tests/source-package-helper.mjs',
+  'tests/source-parity.test.mjs'
+];
+
+export const expectedUiSharedModulePairs = [
+  [
+    'src/system/object_guard/object_guard.classes.bl',
+    'system/object_guard/object_guard.classes.bl'
+  ],
+  [
+    'src/system/object_guard/object_guard.functions.bl',
+    'system/object_guard/object_guard.functions.bl'
+  ],
+  [
+    'src/system/object_guard/object_guard.tables.bl',
+    'system/object_guard/object_guard.tables.bl'
+  ],
+  [
+    'src/system/runtime_object/runtime_object.functions.bl',
+    'system/runtime_object/runtime_object.functions.bl'
+  ],
+  [
+    'src/system/runtime_object/runtime_object.types.bl',
+    'system/runtime_object/runtime_object.types.bl'
+  ],
+  [
+    'src/system/ui/runtime.bl',
+    'system/ui/runtime.bl'
+  ],
+  [
+    'src/system/ui/runtime_ui.binding.functions.bl',
+    'system/ui/runtime_ui.binding.functions.bl'
+  ],
+  [
+    'src/system/ui/runtime_ui.controls.functions.bl',
+    'system/ui/runtime_ui.controls.functions.bl'
+  ],
+  [
+    'src/system/ui/runtime_ui.execution.functions.bl',
+    'system/ui/runtime_ui.execution.functions.bl'
+  ],
+  [
+    'src/system/ui/runtime_ui.functions.bl',
+    'system/ui/runtime_ui.functions.bl'
+  ],
+  [
+    'src/system/ui/runtime_ui.messages.bl',
+    'system/ui/runtime_ui.messages.bl'
+  ],
+  [
+    'src/system/ui/runtime_ui.metadata.functions.bl',
+    'system/ui/runtime_ui.metadata.functions.bl'
+  ],
+  [
+    'src/system/ui/runtime_ui.tables.bl',
+    'system/ui/runtime_ui.tables.bl'
+  ],
+  [
+    'src/system/ui/runtime_ui.types.bl',
+    'system/ui/runtime_ui.types.bl'
+  ],
+  [
+    'src/system/ui/runtime_ui_dispatch.functions.bl',
+    'system/ui/runtime_ui_dispatch.functions.bl'
+  ],
+  [
+    'src/system/ui/runtime_ui_session.functions.bl',
+    'system/ui/runtime_ui_session.functions.bl'
+  ]
+];
+
+export const expectedUiBusinessSourceParityPairs = [
+  [
+    'src/system/object_guard/object_guard.classes.bl',
+    'system/object_guard/object_guard.classes.bl'
+  ],
+  [
+    'src/system/object_guard/object_guard.functions.bl',
+    'system/object_guard/object_guard.functions.bl'
+  ],
+  [
+    'src/system/object_guard/object_guard.tables.bl',
+    'system/object_guard/object_guard.tables.bl'
+  ],
+  [
+    'src/system/runtime_object/runtime_object.functions.bl',
+    'system/runtime_object/runtime_object.functions.bl'
+  ],
+  [
+    'src/system/runtime_object/runtime_object.types.bl',
+    'system/runtime_object/runtime_object.types.bl'
+  ]
+];
+
+export const expectedUiBlFiles = expectedUiSharedModulePairs.map(
+  ([packageRelativePath]) => packageRelativePath
+);
+
+export const expectedUiExportedBlFiles = [
+  'src/system/object_guard/object_guard.functions.bl',
+  'src/system/object_guard/object_guard.classes.bl',
+  'src/system/object_guard/object_guard.tables.bl',
+  'src/system/runtime_object/runtime_object.functions.bl',
+  'src/system/runtime_object/runtime_object.types.bl',
+  'src/system/ui/runtime.bl',
+  'src/system/ui/runtime_ui.functions.bl',
+  'src/system/ui/runtime_ui.messages.bl',
+  'src/system/ui/runtime_ui.tables.bl',
+  'src/system/ui/runtime_ui.types.bl',
+  'src/system/ui/runtime_ui_dispatch.functions.bl',
+  'src/system/ui/runtime_ui_session.functions.bl'
+];

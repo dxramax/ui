@@ -1,0 +1,309 @@
+struct RuntimeUiCatalogEntry {
+  app_id: string;
+  title: string?;
+  description: string?;
+  icon: string?;
+  module: string?;
+  technical: string?;
+  technical_name: string?;
+  startup_form_id: string?;
+  form_count: int?;
+}
+
+struct RuntimeUiFormMetadata {
+  form_id: string;
+  title: string?;
+  description: string?;
+  icon: string?;
+  technical: string?;
+  form_technical_name: string?;
+  readonly: bool?;
+  load: Json?;
+  ui_from: string?;
+  state_fields: Json?;
+  form_body: Json?;
+  buttons: Json?;
+  source_path: string?;
+}
+
+struct RuntimeUiAppMetadata {
+  app_id: string;
+  title: string?;
+  description: string?;
+  icon: string?;
+  module: string?;
+  technical: string?;
+  technical_name: string?;
+  startup_form_id: string?;
+  forms: Json?;
+}
+
+struct RuntimeUiSessionContext {
+  user_id: string?;
+  tenant_id: string?;
+  security_context: Json?;
+  client_session_id: string?;
+}
+
+struct AppSession {
+  session_id: string;
+  app_id: string;
+  user_id: string?;
+  tenant_id: string?;
+  security_context: Json?;
+  active: bool;
+}
+
+struct FormSession {
+  form_instance_id: string;
+  session_id: string;
+  app_id: string;
+  form_id: string;
+  user_id: string?;
+  tenant_id: string?;
+  security_context: Json?;
+  revision: int;
+  binding_type: string?;
+  binding_state: Json?;
+  open_args: Json?;
+  state_sync: Json?;
+  messages: Json?;
+  active: bool;
+}
+
+struct RuntimeUiControlRuntimeContract {
+  control_id: string;
+  control_kind: string;
+  binding_path: string?;
+  selection_path: string?;
+  pagination_path: string?;
+  field_like: bool;
+  grid_like: bool;
+  supports_value: bool;
+  supports_selected_key: bool;
+  supports_associated: bool;
+  supports_rows: bool;
+  supports_selection: bool;
+  supports_pagination: bool;
+  supports_read_only: bool;
+  supports_display_only: bool;
+  supports_disabled: bool;
+}
+
+struct RuntimeUiControlRuntimeState {
+  value: Json?;
+  selected_key: Json?;
+  associated: Json?;
+  read_only: bool?;
+  display_only: bool?;
+  disabled: bool?;
+  visible: bool?;
+  pending: bool?;
+  rows: Json?;
+  selection: Json?;
+  pagination: Json?;
+  selected: Json?;
+  selection_range: Json?;
+  active_cell: Json?;
+  filters: Json?;
+  filter_model: Json?;
+  search_query: Json?;
+  sort_key: Json?;
+  sort_direction: Json?;
+  sorts: Json?;
+  page: Json?;
+  page_size: Json?;
+  total_rows: Json?;
+}
+
+struct RuntimeUiControlRuntimeUpdate {
+  id: string;
+  runtime_state: Json?;
+  revision: int;
+}
+
+struct RuntimeUiControlSyncResult {
+  form_state: Json?;
+  control_runtime_updates: Json?;
+  grid_response: Json?;
+}
+
+struct RuntimeUiOpenFormRequest {
+  app_id: string;
+  form_id: string;
+  args: Json?;
+  context: Json?;
+}
+
+struct RuntimeUiSessionOpenRequest {
+  app_id: string;
+  form_id: string;
+  args: Json?;
+  context: Json?;
+  defer_data_load: bool?;
+}
+
+struct RuntimeUiApplyRequest {
+  session_id: string;
+  form_instance_id: string;
+  app_id: string?;
+  form_id: string?;
+  revision: int;
+  state_sync: Json;
+  event: Json?;
+  context: Json?;
+}
+
+struct RuntimeUiSessionSyncRequest {
+  session_id: string;
+  form_instance_id: string;
+  app_id: string?;
+  form_id: string?;
+  revision: int;
+  state_sync: Json;
+  context: Json?;
+}
+
+struct RuntimeUiSessionResumeRequest {
+  session_id: string;
+  form_instance_id: string;
+  app_id: string?;
+  form_id: string?;
+  context: Json?;
+}
+
+struct RuntimeUiSessionCloseRequest {
+  session_id: string;
+  form_instance_id: string?;
+  app_id: string?;
+  form_id: string?;
+  context: Json?;
+}
+
+struct RuntimeUiFireEventRequest {
+  session_id: string;
+  form_instance_id: string;
+  app_id: string?;
+  form_id: string?;
+  revision: int;
+  control_id: string;
+  event_name: string;
+  state_sync: Json?;
+  payload: Json?;
+  context: Json?;
+}
+
+struct RuntimeUiApplyExecutionContext {
+  session_id: string;
+  form_instance_id: string;
+  app_id: string;
+  form_id: string;
+  revision: int;
+  control_id: string;
+  control_kind: string;
+  event_name: string;
+  handler: string;
+  dispatch_target: string;
+  binding_type: string?;
+  binding_kind: string?;
+  binding_key_fields: Json?;
+  binding_state: Json?;
+  handler_input: Json?;
+  form_state: Json;
+  event: Json?;
+}
+
+struct RuntimeUiApplyExecutionResult {
+  handled: bool;
+  form_state: Json?;
+  binding_state: Json?;
+  messages: Json?;
+  effects: Json?;
+  navigation: Json?;
+  transfer_payload: Json?;
+}
+
+struct RuntimeUiInternalFormState {
+  binding_type: string?;
+  binding_kind: string?;
+  binding_members: Json?;
+  binding_key_fields: Json?;
+  binding_object: RuntimeObject?;
+  state: Json;
+  binding_state: Json?;
+  open_args: Json?;
+}
+
+struct RuntimeUiLookupRequest {
+  session_id: string?;
+  form_instance_id: string?;
+  revision: int?;
+  app_id: string?;
+  form_id: string?;
+  control_id: string?;
+  table: string?;
+  field_name: string?;
+  query: string?;
+  origin: Json?;
+  associated_fields: Json?;
+  limit: int?;
+  context: Json?;
+}
+
+struct RuntimeUiExportRequest {
+  session_id: string?;
+  form_instance_id: string?;
+  revision: int?;
+  app_id: string?;
+  form_id: string?;
+  control_id: string?;
+  format: string?;
+  export: Json?;
+  context: Json?;
+}
+
+struct RuntimeUiFormRuntime {
+  session_id: string;
+  app_id: string;
+  form_id: string;
+  form_instance_id: string;
+  revision: int;
+  form: Json;
+  state_sync: Json;
+  messages: Json?;
+  __ui: Json?;
+}
+
+struct RuntimeUiApplyResponse {
+  session_id: string;
+  form_instance_id: string;
+  revision: int;
+  state_sync: Json;
+  messages: Json?;
+  __ui: Json?;
+}
+
+struct RuntimeUiSessionResponse {
+  session_id: string;
+  app_id: string;
+  form_id: string;
+  form_instance_id: string;
+  revision: int;
+  state_sync: Json;
+  messages: Json?;
+  active: bool;
+}
+
+struct RuntimeUiEventResponse {
+  session_id: string;
+  app_id: string;
+  form_id: string;
+  form_instance_id: string;
+  revision: int;
+  state_sync: Json;
+  messages: Json?;
+  active: bool;
+  effects: Json?;
+  navigation: Json?;
+  data: Json?;
+}

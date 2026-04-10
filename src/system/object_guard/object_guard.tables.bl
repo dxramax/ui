@@ -1,0 +1,30 @@
+table SystemCurrentObjectGuard {
+    field object_type: string max_length(160) key;
+    field object_key: string max_length(512) key;
+    field object_label: string? max_length(160);
+    field guard_mode: string max_length(40) default("edit");
+    field owner_session_id: string max_length(120);
+    field owner_form_instance_id: string? max_length(120);
+    field owner_user_id: string? max_length(120);
+    field owner_tenant_id: string? max_length(120);
+    field acquired_at: string default(now());
+    field last_seen_at: string default(now());
+    field expires_at: string?;
+}
+
+table SystemObjectGuardHistory {
+    field history_id: string max_length(80) key origin;
+    field object_type: string max_length(160) key;
+    field object_key: string max_length(512) key;
+    field object_label: string? max_length(160);
+    field guard_mode: string max_length(40) default("edit");
+    field owner_session_id: string? max_length(120);
+    field owner_form_instance_id: string? max_length(120);
+    field owner_user_id: string? max_length(120);
+    field owner_tenant_id: string? max_length(120);
+    field action_type: string max_length(32);
+    field action_status: string max_length(32);
+    field action_message: string? max_length(255);
+    field created_at: string default(now());
+    field expires_at: string?;
+}

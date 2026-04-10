@@ -1,0 +1,2815 @@
+public function runtime_ui_get_catalog(): Json {
+  let app_nodes = runtime_ui_collect_app_declaration_matches();
+  let apps: Json = [];
+  let app_count = 0;
+
+  for (app_node_match in app_nodes) {
+    let app_node_id = Runtime.json_to_str(app_node_match["node_id"]);
+    if (app_node_id == "") {
+      app_node_id = Runtime.json_to_str(app_node_match["id"]);
+    }
+    let app_node_json = ast.node_to_json(app_node_id);
+    apps[app_count] = runtime_ui_build_app_metadata(app_node_json);
+    app_count = app_count + 1;
+  }
+
+  return {
+    "apps": apps
+  };
+}
+
+private function runtime_ui_resolve_app_runtime_context(app_id: string): Json {
+  let app_node_json = runtime_ui_find_app_node(app_id);
+  if (app_node_json == null) {
+    return {
+      "app_node": null,
+      "form_lookup": null
+    };
+  }
+
+  return {
+    "app_node": app_node_json,
+    "form_lookup": runtime_ui_build_form_node_lookup_for_app(app_node_json)
+  };
+}
+
+private function runtime_ui_require_app_runtime_context(app_id: string): Json {
+  let runtime_context = runtime_ui_resolve_app_runtime_context(app_id);
+  let app_node_json = runtime_context["app_node"];
+  if (app_node_json == null) {
+    raise runtime_ui_app_not_found;
+  }
+
+  return {
+    "app_node": app_node_json,
+    "form_lookup": runtime_context["form_lookup"]
+  };
+}
+
+public function runtime_ui_get_app(app_id: string): Json {
+  let runtime_context = runtime_ui_require_app_runtime_context(app_id);
+  let app_node_json = runtime_context["app_node"];
+  let form_lookup = runtime_context["form_lookup"];
+  let app_metadata = runtime_ui_build_app_metadata_from_lookup(app_node_json, form_lookup);
+  let app_summary = runtime_ui_merge_flat_json_object(app_metadata, {
+    "forms": [],
+    "form_count": 0
+  });
+
+  return {
+    "app": app_metadata,
+    "apps": [app_summary],
+    "startup_form_id": app_metadata["startup_form_id"],
+    "forms": app_metadata["forms"]
+  };
+}
+
+public function runtime_ui_get_app_info(app_name: string): Json {
+  let runtime_context = runtime_ui_require_app_runtime_context(app_name);
+  let app_node_json = runtime_context["app_node"];
+  let form_lookup = runtime_context["form_lookup"];
+  let master_app_info = runtime_ui_build_master_app_info_from_lookup(
+    app_node_json,
+    form_lookup
+  );
+
+  return {
+    "app": master_app_info
+  };
+}
+
+private function runtime_ui_resolve_requested_form_id(
+  app_node_json: Json,
+  requested_form_id: string
+): string {
+  return runtime_ui_resolve_requested_form_id_with_lookup(
+    app_node_json,
+    requested_form_id,
+    runtime_ui_build_form_node_lookup_for_app(app_node_json)
+  );
+}
+
+private function runtime_ui_resolve_requested_form_id_with_lookup(
+  app_node_json: Json,
+  requested_form_id: string,
+  form_lookup: Json
+): string {
+  let normalized_form_id = Runtime.json_to_str(requested_form_id);
+  if (normalized_form_id != "") {
+    return normalized_form_id;
+  }
+  return runtime_ui_find_startup_form_id_with_mounted_targets(
+    app_node_json,
+    form_lookup.mounted_targets
+  );
+}
+
+private function runtime_ui_resolve_open_bootstrap_revision(
+  previous_form_session: FormSession
+): int {
+  let resolved_revision = 1;
+  if (previous_form_session != null && previous_form_session.revision > resolved_revision) {
+    resolved_revision = previous_form_session.revision;
+  }
+  return resolved_revision;
+}
+
+private function runtime_ui_adopt_synced_form_state(
+  form_metadata: Json,
+  internal_form_state: Json,
+  synced_form_state: Json
+): Json {
+  internal_form_state["state"] = synced_form_state.form_state ?? {};
+  internal_form_state = runtime_ui_sync_internal_form_state_binding(
+    form_metadata,
+    internal_form_state
+  );
+  return {
+    "internal_form_state": internal_form_state,
+    "form_state": internal_form_state.state,
+    "control_runtime_updates": synced_form_state.control_runtime_updates ?? [],
+    "grid_response": synced_form_state.grid_response ?? {}
+  };
+}
+
+private function runtime_ui_resolve_apply_event_control_context(
+  form_metadata: Json,
+  control_id: string
+): Json {
+  let normalized_control_id = Runtime.json_to_str(control_id);
+  let execution_control_metadata = runtime_ui_find_control_metadata(
+    form_metadata,
+    normalized_control_id
+  );
+  let execution_button_metadata = runtime_ui_find_button_metadata(
+    form_metadata,
+    normalized_control_id
+  );
+  if (execution_control_metadata is null && execution_button_metadata is null) {
+    raise runtime_ui_apply_event_control_metadata_not_found;
+  }
+
+  let execution_control_kind = Runtime.json_to_str(execution_control_metadata["type"]);
+  if (execution_control_kind == "") {
+    execution_control_kind = Runtime.json_to_str(execution_button_metadata["type"]);
+  }
+  if (execution_control_kind == "") {
+    execution_control_kind = "Button";
+  }
+
+  return {
+    "control_metadata": execution_control_metadata,
+    "button_metadata": execution_button_metadata,
+    "control_kind": execution_control_kind
+  };
+}
+
+private function runtime_ui_resolve_apply_button_event_overrides(
+  button_metadata: Json,
+  handler: string,
+  dispatch_target: string,
+  form_lookup: Json,
+  form_id: string,
+  control_id: string
+): Json {
+  let next_handler = Runtime.json_to_str(handler);
+  let next_dispatch_target = Runtime.json_to_str(dispatch_target);
+  if (button_metadata == null) {
+    return {
+      "handler": next_handler,
+      "dispatch_target": next_dispatch_target
+    };
+  }
+
+  let button_click_event = button_metadata["events"]["click"];
+  let metadata_button_handler = Runtime.json_to_str(button_click_event["handler"]);
+  let metadata_button_dispatch_target = Runtime.json_to_str(
+    button_click_event["dispatch_target"]
+  );
+  if (next_handler == "" && metadata_button_handler != "") {
+    next_handler = metadata_button_handler;
+  }
+  if (metadata_button_dispatch_target != "") {
+    next_dispatch_target = metadata_button_dispatch_target;
+  } else {
+    let resolved_button_dispatch_target =
+      runtime_ui_resolve_button_click_dispatch_target_in_lookup(
+        form_lookup,
+        form_id,
+        control_id
+      );
+    if (resolved_button_dispatch_target != "") {
+      next_dispatch_target = resolved_button_dispatch_target;
+    }
+  }
+
+  return {
+    "handler": next_handler,
+    "dispatch_target": next_dispatch_target
+  };
+}
+
+private function runtime_ui_resolve_apply_execution_targets(
+  button_metadata: Json,
+  handler: string,
+  dispatch_target: string,
+  form_lookup: Json,
+  form_id: string,
+  control_id: string
+): Json {
+  let execution_button_event_overrides = runtime_ui_resolve_apply_button_event_overrides(
+    button_metadata,
+    handler,
+    dispatch_target,
+    form_lookup,
+    form_id,
+    control_id
+  );
+  let next_handler = Runtime.json_to_str(execution_button_event_overrides["handler"]);
+  let next_dispatch_target = Runtime.json_to_str(
+    execution_button_event_overrides["dispatch_target"]
+  );
+  if (next_dispatch_target == "" && next_handler != "") {
+    next_dispatch_target = next_handler;
+  }
+
+  return {
+    "handler": next_handler,
+    "dispatch_target": next_dispatch_target
+  };
+}
+
+private function runtime_ui_require_apply_event_identity(event: Json): Json {
+  let event_name = runtime_ui_resolve_apply_event_name(event);
+  if (event_name == "") {
+    raise runtime_ui_apply_event_name_required;
+  }
+
+  let control_id = runtime_ui_resolve_apply_event_control_id(event);
+  if (control_id == "") {
+    raise runtime_ui_apply_event_control_id_required;
+  }
+
+  return {
+    "event_name": event_name,
+    "control_id": control_id
+  };
+}
+
+private function runtime_ui_require_apply_session_context(
+  app_session: AppSession,
+  form_session: FormSession,
+  session_context: Json,
+  requested_app_id: string,
+  requested_form_id: string
+): Json {
+  if (app_session is null) {
+    raise runtime_ui_apply_app_session_not_found;
+  }
+  if (form_session is null) {
+    raise runtime_ui_apply_form_session_not_found;
+  }
+  if (!runtime_ui_session_context_matches(app_session, form_session, session_context)) {
+    raise runtime_ui_apply_session_context_mismatch;
+  }
+  if (requested_app_id != "") {
+    if (Runtime.json_to_str(app_session.app_id) != "" && requested_app_id != app_session.app_id) {
+      raise runtime_ui_apply_app_id_mismatch;
+    }
+    if (
+      Runtime.json_to_str(form_session.app_id) != ""
+      && requested_app_id != form_session.app_id
+    ) {
+      raise runtime_ui_apply_app_id_mismatch;
+    }
+  }
+  if (
+    requested_form_id != ""
+    && Runtime.json_to_str(form_session.form_id) != ""
+    && requested_form_id != form_session.form_id
+  ) {
+    raise runtime_ui_apply_form_id_mismatch;
+  }
+
+  let effective_app_id = requested_app_id;
+  let effective_form_id = requested_form_id;
+  if (effective_app_id == "") {
+    effective_app_id = form_session.app_id;
+  }
+  if (effective_form_id == "") {
+    effective_form_id = form_session.form_id;
+  }
+  app_session["app_id"] = effective_app_id;
+  form_session["app_id"] = effective_app_id;
+  form_session["form_id"] = effective_form_id;
+
+  return {
+    "app_session": app_session,
+    "form_session": form_session,
+    "app_id": effective_app_id,
+    "form_id": effective_form_id
+  };
+}
+
+private function runtime_ui_apply_execution_result_state(
+  form_metadata: Json,
+  internal_form_state: Json,
+  execution_result: Json
+): Json {
+  let next_internal_form_state = runtime_ui_apply_execution_result_to_internal_form_state(
+    form_metadata,
+    internal_form_state,
+    execution_result
+  );
+  return {
+    "handled": execution_result.handled,
+    "internal_form_state": next_internal_form_state,
+    "form_state": next_internal_form_state.state
+  };
+}
+
+private function runtime_ui_skip_post_execution_control_sync(
+  control_metadata: Json,
+  control_kind: string,
+  event_name: string
+): bool {
+  let normalized_control_kind = Runtime.json_to_str(control_kind);
+  let normalized_event_name = Runtime.json_to_str(event_name);
+  if (normalized_control_kind != "DataGrid" && normalized_control_kind != "Grid") {
+    return false;
+  }
+  if (normalized_event_name != "load" && normalized_event_name != "on_load") {
+    return false;
+  }
+  return runtime_ui_is_source_backed_grid_control(control_metadata);
+}
+
+private function runtime_ui_resolve_post_execution_sync_target_control_id(
+  control_metadata: Json,
+  control_id: string,
+  control_kind: string,
+  event_name: string
+): string {
+  if (!runtime_ui_skip_post_execution_control_sync(control_metadata, control_kind, event_name)) {
+    return "";
+  }
+  return Runtime.json_to_str(control_id);
+}
+
+private function runtime_ui_resolve_apply_grid_response_control_id(
+  form_metadata: Json,
+  execution_control_id: string,
+  request_ui_state: Json,
+  normalized_ui_state: Json
+): string {
+  let normalized_execution_control_id = Runtime.json_to_str(execution_control_id);
+  if (normalized_execution_control_id != "") {
+    return normalized_execution_control_id;
+  }
+
+  let preferred_grid_control_id = runtime_ui_resolve_preferred_grid_control_id(
+    form_metadata,
+    request_ui_state,
+    normalized_ui_state
+  );
+  if (preferred_grid_control_id != "") {
+    return preferred_grid_control_id;
+  }
+
+  return "";
+}
+
+private function runtime_ui_apply_execution_result_outputs(
+  execution_result: Json,
+  execution_messages: Json,
+  session_id: string,
+  form_instance_id: string,
+  app_id: string,
+  form_id: string,
+  revision: int,
+  execution_effects: Json,
+  execution_navigation: Json,
+  execution_transfer_payload: Json
+): Json {
+  let next_execution_messages = execution_result.messages ?? execution_messages;
+  next_execution_messages = runtime_ui_ensure_apply_execution_message(
+    next_execution_messages,
+    session_id,
+    form_instance_id,
+    app_id,
+    form_id,
+    revision
+  );
+
+  return {
+    "messages": next_execution_messages,
+    "effects": execution_result.effects ?? execution_effects,
+    "navigation": execution_result.navigation ?? execution_navigation,
+    "transfer_payload": execution_result.transfer_payload ?? execution_transfer_payload
+  };
+}
+
+private function runtime_ui_require_materialized_apply_control_sessions(
+  form_instance_id: string,
+  session_id: string,
+  app_id: string,
+  form_id: string,
+  form_metadata: Json,
+  revision: int,
+  control_session_index: Json
+): void {
+  return;
+}
+
+private function runtime_ui_require_projected_apply_form_state(
+  session_id: string,
+  form_instance_id: string,
+  app_id: string,
+  form_id: string,
+  revision: int,
+  form_metadata: Json,
+  internal_form_state: Json,
+  ui_state: Json,
+  persisted_ui_state: Json
+): Json {
+  let projected_form_state = runtime_ui_apply_request_ui_state_to_form_state(
+    session_id,
+    form_instance_id,
+    app_id,
+    form_id,
+    revision,
+    form_metadata,
+    internal_form_state.state,
+    ui_state,
+    persisted_ui_state
+  );
+  if (projected_form_state == null) {
+    raise runtime_ui_apply_control_state_sync_failed;
+  }
+
+  internal_form_state["state"] = projected_form_state;
+  let next_internal_form_state = runtime_ui_sync_internal_form_state_binding(
+    form_metadata,
+    internal_form_state
+  );
+  return {
+    "internal_form_state": next_internal_form_state,
+    "form_state": next_internal_form_state.state
+  };
+}
+
+private function runtime_ui_require_apply_execution_result(
+  session_id: string,
+  form_instance_id: string,
+  app_id: string,
+  form_id: string,
+  revision: int,
+  control_id: string,
+  control_kind: string,
+  event_name: string,
+  handler: string,
+  dispatch_target: string,
+  form_metadata: Json,
+  internal_form_state: Json,
+  event: Json
+): Json {
+  let execution_context = runtime_ui_build_apply_execution_context(
+    session_id,
+    form_instance_id,
+    app_id,
+    form_id,
+    revision,
+    control_id,
+    control_kind,
+    event_name,
+    handler,
+    dispatch_target,
+    internal_form_state.binding_type,
+    internal_form_state.binding_kind,
+    internal_form_state.binding_key_fields,
+    internal_form_state.binding_state,
+    runtime_ui_build_execution_handler_input(
+      form_metadata,
+      internal_form_state,
+      event_name
+    ),
+    runtime_ui_build_execution_form_state(form_metadata, internal_form_state),
+    runtime_ui_build_apply_dispatch_event(
+      form_metadata,
+      internal_form_state,
+      event
+    )
+  );
+  let execution_result = runtime_ui_dispatch_handler(execution_context);
+  if (execution_result is null) {
+    raise runtime_ui_apply_dispatch_failed;
+  }
+  return execution_result;
+}
+
+private function runtime_ui_require_persisted_apply_bundle(
+  app_session: Json,
+  form_session: Json,
+  normalized_revision: int,
+  normalized_session_context: Json,
+  next_revision: int,
+  form_metadata: Json,
+  internal_form_state: Json,
+  next_state_sync: Json,
+  execution_messages: Json,
+  staged_control_runtime_updates: Json,
+  control_session_index: Json
+): void {
+  app_session["revision"] = next_revision;
+  app_session["active"] = true;
+  form_session["revision"] = next_revision;
+  form_session["active"] = true;
+  form_session["binding_type"] = runtime_ui_resolve_form_binding_type(form_metadata);
+  form_session["binding_state"] = internal_form_state.binding_state;
+  form_session["state_sync"] = next_state_sync;
+  form_session["messages"] = execution_messages;
+  let persisted_apply_bundle = runtime_ui_compare_and_save_session_bundle(
+    app_session,
+    form_session,
+    normalized_revision,
+    normalized_session_context,
+    staged_control_runtime_updates,
+    null
+  );
+  if (!persisted_apply_bundle) {
+    raise runtime_ui_apply_atomic_persist_failed;
+  }
+}
+
+private function runtime_ui_require_persisted_open_bundle(
+  app_session: Json,
+  form_session: Json,
+  session_id: string,
+  form_instance_id: string,
+  previous_app_session: Json,
+  previous_form_session: Json,
+  previous_control_session_snapshots: Json,
+  bootstrap_revision: int,
+  normalized_session_context: Json,
+  form_binding_type: string,
+  internal_form_state: Json,
+  normalized_open_args: Json,
+  initial_state_sync: Json,
+  initial_messages: Json,
+  initial_control_runtime_updates: Json,
+  control_session_index: Json,
+  defer_app_session_persist: bool = false
+): void {
+  form_session["revision"] = bootstrap_revision;
+  form_session["active"] = true;
+  form_session["binding_type"] = form_binding_type;
+  form_session["binding_state"] = internal_form_state.binding_state;
+  form_session["open_args"] = normalized_open_args;
+  form_session["state_sync"] = initial_state_sync;
+  form_session["messages"] = initial_messages;
+  let persisted_open_bundle = false;
+  if (previous_app_session is null && previous_form_session is null) {
+    let persisted_form_session = runtime_ui_save_form_session(form_session);
+    if (defer_app_session_persist) {
+      persisted_open_bundle = persisted_form_session != null;
+    } else {
+      let persisted_app_session = runtime_ui_save_app_session(app_session);
+      persisted_open_bundle = persisted_app_session != null && persisted_form_session != null;
+    }
+  } else {
+    persisted_open_bundle = runtime_ui_compare_and_save_session_bundle(
+      app_session,
+      form_session,
+      bootstrap_revision,
+      normalized_session_context,
+      initial_control_runtime_updates,
+      null
+    );
+  }
+  if (!persisted_open_bundle) {
+    let restored_open_session = runtime_ui_restore_open_session_bootstrap(
+      session_id,
+      form_instance_id,
+      previous_app_session,
+      previous_form_session,
+      previous_control_session_snapshots
+    );
+    if (!restored_open_session) {
+      raise runtime_ui_open_form_app_session_compare_and_save_failed;
+    }
+    raise runtime_ui_open_form_atomic_persist_failed;
+  }
+}
+
+private function runtime_ui_restore_open_session_failure(
+  session_id: string,
+  form_instance_id: string,
+  previous_app_session: Json,
+  previous_form_session: Json,
+  previous_control_session_snapshots: Json
+): void {
+  runtime_ui_restore_open_session_bootstrap(
+    session_id,
+    form_instance_id,
+    previous_app_session,
+    previous_form_session,
+    previous_control_session_snapshots
+  );
+}
+
+private function runtime_ui_raise_open_form_load_handler_failed(
+  session_id: string,
+  form_instance_id: string,
+  previous_app_session: Json,
+  previous_form_session: Json,
+  previous_control_session_snapshots: Json
+): void {
+  runtime_ui_restore_open_session_failure(
+    session_id,
+    form_instance_id,
+    previous_app_session,
+    previous_form_session,
+    previous_control_session_snapshots
+  );
+  raise runtime_ui_open_form_load_handler_failed;
+}
+
+private function runtime_ui_require_open_form_load_execution_result(
+  form_metadata: Json,
+  internal_form_state: Json,
+  session_id: string,
+  form_instance_id: string,
+  app_id: string,
+  form_id: string,
+  bootstrap_revision: int,
+  form_load_handler: string,
+  previous_app_session: Json,
+  previous_form_session: Json,
+  previous_control_session_snapshots: Json
+): Json {
+  let load_execution_result = runtime_ui_execute_form_load(
+    form_metadata,
+    internal_form_state,
+    session_id,
+    form_instance_id,
+    app_id,
+    form_id,
+    bootstrap_revision,
+    form_load_handler
+  );
+  if (load_execution_result == null) {
+    runtime_ui_raise_open_form_load_handler_failed(
+      session_id,
+      form_instance_id,
+      previous_app_session,
+      previous_form_session,
+      previous_control_session_snapshots
+    );
+  }
+  return load_execution_result;
+}
+
+private function runtime_ui_require_open_materialized_control_sessions(
+  form_instance_id: string,
+  session_id: string,
+  app_id: string,
+  form_id: string,
+  previous_app_session: Json,
+  previous_form_session: Json,
+  previous_control_session_snapshots: Json,
+  controls: Json,
+  buttons: Json,
+  bootstrap_revision: int,
+  control_session_index: Json
+): void {
+  return;
+}
+
+private function runtime_ui_require_open_sessions(
+  session_id: string,
+  form_instance_id: string,
+  app_id: string,
+  form_id: string,
+  bootstrap_revision: int,
+  normalized_session_context: Json
+): Json {
+  let app_session = runtime_ui_get_or_create_app_session(
+    session_id,
+    app_id,
+    normalized_session_context
+  );
+  let form_session = runtime_ui_get_or_create_form_session(
+    form_instance_id,
+    session_id,
+    app_id,
+    form_id,
+    bootstrap_revision,
+    normalized_session_context
+  );
+  if (app_session is null) {
+    raise runtime_ui_open_form_app_session_persist_failed;
+  }
+  if (form_session is null) {
+    raise runtime_ui_open_form_form_session_persist_failed;
+  }
+  return {
+    "app_session": app_session,
+    "form_session": form_session
+  };
+}
+
+private function runtime_ui_can_defer_initial_open_session_persist(
+  previous_app_session: Json,
+  previous_form_session: Json,
+  form_load_handler: string,
+  form_load_dispatch_target: string
+): bool {
+  return previous_app_session is null
+    && previous_form_session is null
+    && Runtime.json_to_str(form_load_handler) == ""
+    && Runtime.json_to_str(form_load_dispatch_target) == "";
+}
+
+private function runtime_ui_build_pending_open_app_session(
+  session_id: string,
+  app_id: string,
+  normalized_session_context: Json
+): AppSession {
+  let app_session = Runtime.json_parse("{}");
+  app_session["session_id"] = Runtime.json_to_str(session_id);
+  app_session["app_id"] = Runtime.json_to_str(app_id);
+  app_session["active"] = true;
+  app_session["created_at"] = now();
+  app_session["last_seen_at"] = now();
+  return runtime_ui_apply_app_session_context(app_session, normalized_session_context);
+}
+
+private function runtime_ui_build_pending_open_form_session(
+  form_instance_id: string,
+  session_id: string,
+  app_id: string,
+  form_id: string,
+  bootstrap_revision: int,
+  normalized_session_context: Json
+): FormSession {
+  let form_session = Runtime.json_parse("{}");
+  form_session["form_instance_id"] = Runtime.json_to_str(form_instance_id);
+  form_session["session_id"] = Runtime.json_to_str(session_id);
+  form_session["app_id"] = Runtime.json_to_str(app_id);
+  form_session["form_id"] = Runtime.json_to_str(form_id);
+  form_session["revision"] = bootstrap_revision;
+  form_session["active"] = true;
+  form_session["created_at"] = now();
+  form_session["last_seen_at"] = now();
+  return runtime_ui_apply_form_session_context(form_session, normalized_session_context);
+}
+
+private function runtime_ui_require_open_synced_control_state(
+  session_id: string,
+  form_instance_id: string,
+  app_id: string,
+  form_id: string,
+  previous_app_session: Json,
+  previous_form_session: Json,
+  previous_control_session_snapshots: Json,
+  bootstrap_revision: int,
+  form_metadata: Json,
+  initial_form_state: Json,
+  persisted_ui_state: Json
+): Json {
+  let synced_initial_form_state = runtime_ui_sync_control_sessions(
+    session_id,
+    form_instance_id,
+    app_id,
+    form_id,
+    bootstrap_revision,
+    form_metadata,
+    initial_form_state,
+    null,
+    persisted_ui_state,
+    "",
+    ""
+  );
+  if (synced_initial_form_state == null) {
+    runtime_ui_restore_open_session_failure(
+      session_id,
+      form_instance_id,
+      previous_app_session,
+      previous_form_session,
+      previous_control_session_snapshots
+    );
+    raise runtime_ui_open_form_control_state_sync_failed;
+  }
+  return synced_initial_form_state;
+}
+
+private function runtime_ui_build_open_response(
+  session_id: string,
+  app_id: string,
+  form_id: string,
+  form_instance_id: string,
+  revision: int,
+  form_metadata: Json,
+  initial_state_sync: Json,
+  initial_messages: Json
+): Json {
+  return {
+    "session_id": session_id,
+    "app_id": app_id,
+    "form_id": form_id,
+    "form_instance_id": form_instance_id,
+    "revision": revision,
+    "form": runtime_ui_build_public_form_metadata(form_metadata),
+    "state_sync": initial_state_sync,
+    "messages": initial_messages
+  };
+}
+
+private function runtime_ui_build_session_response(
+  session_id: string,
+  app_id: string,
+  form_id: string,
+  form_instance_id: string,
+  revision: int,
+  state_sync: Json,
+  messages: Json,
+  active: bool
+): Json {
+  return {
+    "session_id": session_id,
+    "app_id": app_id,
+    "form_id": form_id,
+    "form_instance_id": form_instance_id,
+    "revision": revision,
+    "state_sync": state_sync,
+    "messages": messages,
+    "active": active
+  };
+}
+
+private function runtime_ui_require_resumable_session_context(
+  session_id: string,
+  form_instance_id: string,
+  requested_app_id: string,
+  requested_form_id: string,
+  session_context: Json
+): Json {
+  let normalized_session_id = Runtime.json_to_str(session_id);
+  let normalized_form_instance_id = Runtime.json_to_str(form_instance_id);
+  let normalized_app_id = Runtime.json_to_str(requested_app_id);
+  let normalized_form_id = Runtime.json_to_str(requested_form_id);
+  if (normalized_session_id == "") {
+    raise runtime_ui_apply_session_id_required;
+  }
+  if (normalized_form_instance_id == "") {
+    raise runtime_ui_apply_form_instance_id_required;
+  }
+
+  let app_session = runtime_ui_get_app_session(normalized_session_id);
+  let form_session = runtime_ui_get_form_session(normalized_form_instance_id);
+  if (form_session is null) {
+    raise runtime_ui_lookup_form_session_not_found;
+  }
+  if (form_session.session_id != normalized_session_id) {
+    raise runtime_ui_lookup_session_ownership_mismatch;
+  }
+  if (app_session is null) {
+    app_session = runtime_ui_get_or_create_app_session(
+      normalized_session_id,
+      Runtime.json_to_str(form_session.app_id),
+      session_context
+    );
+    if (app_session is null) {
+      raise runtime_ui_lookup_app_session_not_found;
+    }
+  }
+  if (!runtime_ui_session_context_matches(app_session, form_session, session_context)) {
+    raise runtime_ui_lookup_session_context_mismatch;
+  }
+  if (normalized_app_id != "" && form_session.app_id != normalized_app_id) {
+    raise runtime_ui_lookup_app_id_mismatch;
+  }
+  if (normalized_form_id != "" && form_session.form_id != normalized_form_id) {
+    raise runtime_ui_lookup_form_id_mismatch;
+  }
+
+  return {
+    "app_session": app_session,
+    "form_session": form_session
+  };
+}
+
+private function runtime_ui_close_form_control_sessions(form_instance_id: string): void {
+  return;
+}
+
+private function runtime_ui_build_event_response(
+  session_id: string,
+  app_id: string,
+  form_id: string,
+  form_instance_id: string,
+  revision: int,
+  state_sync: Json,
+  messages: Json,
+  active: bool,
+  effects: Json,
+  navigation: Json,
+  data: Json
+): Json {
+  return {
+    "session_id": session_id,
+    "app_id": app_id,
+    "form_id": form_id,
+    "form_instance_id": form_instance_id,
+    "revision": revision,
+    "state_sync": state_sync,
+    "messages": messages,
+    "active": active,
+    "effects": effects,
+    "navigation": navigation,
+    "data": data
+  };
+}
+
+private function runtime_ui_prepare_open_form_runtime(
+  request: RuntimeUiOpenFormRequest
+): Json {
+  let normalized_app_id = Runtime.json_to_str(request.app_id);
+  let normalized_open_args = request.args;
+  let normalized_session_context = request.context;
+  let defer_data_load = request["defer_data_load"] == true;
+
+  if (normalized_app_id == "") {
+    raise runtime_ui_open_form_app_id_required;
+  }
+
+  let open_template = runtime_ui_prepare_open_form_template(
+    normalized_app_id,
+    request.form_id,
+    normalized_open_args,
+    defer_data_load
+  );
+  let effective_form_id = Runtime.json_to_str(open_template["form_id"]);
+  let form_metadata = open_template["form_metadata"];
+  let form_binding_type = Runtime.json_to_str(open_template["form_binding_type"]);
+  let initial_form_state = open_template["initial_form_state"];
+  let internal_form_state = open_template["internal_form_state"];
+  let form_load_handler = Runtime.json_to_str(open_template["form_load_handler"]);
+  let form_load_dispatch_target = Runtime.json_to_str(open_template["form_load_dispatch_target"]);
+
+  let session_id = runtime_ui_build_session_id(normalized_app_id, normalized_session_context);
+  let form_instance_id = runtime_ui_build_form_session_id(
+    normalized_app_id,
+    effective_form_id,
+    normalized_session_context
+  );
+  let initial_messages: Json = [];
+  let previous_app_session = runtime_ui_get_app_session(session_id);
+  let previous_form_session = runtime_ui_get_form_session(form_instance_id);
+  let previous_control_session_snapshots: Json = [];
+  let persisted_ui_state = null;
+  let bootstrap_revision = runtime_ui_resolve_open_bootstrap_revision(previous_form_session);
+  let app_session = null;
+  let form_session = null;
+  let can_defer_initial_open_session_persist = runtime_ui_can_defer_initial_open_session_persist(
+    previous_app_session,
+    previous_form_session,
+    form_load_handler,
+    form_load_dispatch_target
+  );
+  if (can_defer_initial_open_session_persist) {
+    app_session = runtime_ui_build_pending_open_app_session(
+      session_id,
+      normalized_app_id,
+      normalized_session_context
+    );
+    form_session = runtime_ui_build_pending_open_form_session(
+      form_instance_id,
+      session_id,
+      normalized_app_id,
+      effective_form_id,
+      bootstrap_revision,
+      normalized_session_context
+    );
+  } else {
+    let open_sessions = runtime_ui_require_open_sessions(
+      session_id,
+      form_instance_id,
+      normalized_app_id,
+      effective_form_id,
+      bootstrap_revision,
+      normalized_session_context
+    );
+    app_session = open_sessions["app_session"];
+    form_session = open_sessions["form_session"];
+  }
+  if (form_load_handler != "" || form_load_dispatch_target != "") {
+    if (
+      runtime_ui_dispatch_target_requires_handler(form_load_dispatch_target)
+      && form_load_handler == ""
+    ) {
+      runtime_ui_raise_open_form_load_handler_failed(
+        session_id,
+        form_instance_id,
+        previous_app_session,
+        previous_form_session,
+        previous_control_session_snapshots
+      );
+    }
+    let form_load_handler_reference_status = runtime_ui_resolve_handler_reference_status(
+      form_load_handler
+    );
+    if (
+      form_load_handler_reference_status == "unsupported_kind"
+      || form_load_handler_reference_status == "invalid_return_contract"
+      || form_load_handler_reference_status != "resolved"
+    ) {
+      runtime_ui_restore_open_session_failure(
+        session_id,
+        form_instance_id,
+        previous_app_session,
+        previous_form_session,
+        previous_control_session_snapshots
+      );
+    }
+    if (form_load_handler_reference_status == "unsupported_kind") {
+      raise runtime_ui_open_form_load_handler_unsupported_declaration_kind;
+    }
+    if (form_load_handler_reference_status == "invalid_return_contract") {
+      raise runtime_ui_open_form_load_handler_invalid_return_contract;
+    }
+    if (form_load_handler_reference_status != "resolved") {
+      raise runtime_ui_open_form_load_handler_not_found;
+    }
+    let load_execution_result = runtime_ui_require_open_form_load_execution_result(
+      form_metadata,
+      internal_form_state,
+      session_id,
+      form_instance_id,
+      normalized_app_id,
+      effective_form_id,
+      bootstrap_revision,
+      form_load_handler,
+      previous_app_session,
+      previous_form_session,
+      previous_control_session_snapshots
+    );
+    internal_form_state = runtime_ui_apply_execution_result_to_internal_form_state(
+      form_metadata,
+      internal_form_state,
+      load_execution_result
+    );
+  }
+  initial_form_state = internal_form_state.state;
+  let initial_control_runtime_updates: Json = [];
+  if (!defer_data_load) {
+    let synced_initial_form_state = runtime_ui_require_open_synced_control_state(
+      session_id,
+      form_instance_id,
+      normalized_app_id,
+      effective_form_id,
+      previous_app_session,
+      previous_form_session,
+      previous_control_session_snapshots,
+      bootstrap_revision,
+      form_metadata,
+      initial_form_state,
+      persisted_ui_state
+    );
+    let adopted_initial_form_state = runtime_ui_adopt_synced_form_state(
+      form_metadata,
+      internal_form_state,
+      synced_initial_form_state
+    );
+    internal_form_state = adopted_initial_form_state["internal_form_state"];
+    initial_form_state = adopted_initial_form_state["form_state"];
+    initial_control_runtime_updates = adopted_initial_form_state["control_runtime_updates"];
+  }
+  let initial_client_form_state = runtime_ui_build_client_form_state(
+    form_metadata,
+    initial_form_state
+  );
+  let initial_state_sync = {
+    "form": initial_client_form_state,
+    "uiState": runtime_ui_build_state_sync_ui_state(
+      form_instance_id,
+      form_metadata,
+      initial_form_state,
+      initial_control_runtime_updates,
+      persisted_ui_state,
+      defer_data_load
+    )
+  };
+  initial_state_sync["form"] = initial_client_form_state;
+  runtime_ui_require_persisted_open_bundle(
+    app_session,
+    form_session,
+    session_id,
+    form_instance_id,
+    previous_app_session,
+    previous_form_session,
+    previous_control_session_snapshots,
+    bootstrap_revision,
+    normalized_session_context,
+    form_binding_type,
+    internal_form_state,
+    normalized_open_args,
+    initial_state_sync,
+    initial_messages,
+    initial_control_runtime_updates,
+    null,
+    can_defer_initial_open_session_persist
+  );
+
+  return {
+    "session_id": session_id,
+    "app_id": normalized_app_id,
+    "form_id": effective_form_id,
+    "form_instance_id": form_instance_id,
+    "revision": bootstrap_revision,
+    "form_metadata": form_metadata,
+    "form_state": initial_form_state,
+    "state_sync": initial_state_sync,
+    "messages": initial_messages
+  };
+}
+
+private function runtime_ui_prepare_open_form_template(
+  app_id: string,
+  requested_form_id: string,
+  open_args: Json,
+  defer_data_load: bool
+): Json {
+  let runtime_context = runtime_ui_require_app_runtime_context(app_id);
+  let app_node_json = runtime_context["app_node"];
+  let form_lookup = runtime_context["form_lookup"];
+  let normalized_form_id = runtime_ui_resolve_requested_form_id_with_lookup(
+    app_node_json,
+    requested_form_id,
+    form_lookup
+  );
+  if (normalized_form_id == "") {
+    raise runtime_ui_open_form_form_id_required;
+  }
+
+  let form_metadata = runtime_ui_find_open_form_metadata_in_lookup(
+    form_lookup,
+    normalized_form_id,
+    defer_data_load
+  );
+  if (form_metadata == null) {
+    raise runtime_ui_form_not_found;
+  }
+  let effective_form_id = Runtime.json_to_str(form_metadata["form_id"]);
+  if (effective_form_id == "") {
+    effective_form_id = normalized_form_id;
+  }
+
+  let form_binding_type = runtime_ui_resolve_form_binding_type(form_metadata);
+  let initial_form_state = runtime_ui_build_initial_form_state(
+    form_metadata,
+    open_args
+  );
+  let internal_form_state = runtime_ui_build_internal_form_state(
+    form_metadata,
+    initial_form_state,
+    open_args
+  );
+  let form_load_handler = runtime_ui_resolve_form_load_handler(form_metadata);
+  let form_load_dispatch_target = runtime_ui_resolve_form_load_dispatch_target(form_metadata);
+
+  return {
+    "app_node": app_node_json,
+    "form_lookup": form_lookup,
+    "form_id": effective_form_id,
+    "form_metadata": form_metadata,
+    "form_binding_type": form_binding_type,
+    "initial_form_state": initial_form_state,
+    "internal_form_state": internal_form_state,
+    "form_load_handler": form_load_handler,
+    "form_load_dispatch_target": form_load_dispatch_target
+  };
+}
+
+public function runtime_ui_open_form(request: RuntimeUiOpenFormRequest): Json {
+  let open_runtime = runtime_ui_prepare_open_form_runtime(request);
+  let open_response = runtime_ui_build_open_response(
+    Runtime.json_to_str(open_runtime["session_id"]),
+    Runtime.json_to_str(open_runtime["app_id"]),
+    Runtime.json_to_str(open_runtime["form_id"]),
+    Runtime.json_to_str(open_runtime["form_instance_id"]),
+    Runtime.json_to_i64(open_runtime["revision"]),
+    open_runtime["form_metadata"],
+    open_runtime["state_sync"] ?? {},
+    open_runtime["messages"] ?? []
+  );
+  let open_grid_response = runtime_ui_build_grid_response_envelope(
+    open_runtime["form_metadata"],
+    open_runtime["form_state"],
+    null
+  );
+  return runtime_ui_merge_grid_response_envelope(open_response, open_grid_response);
+}
+
+private function runtime_ui_try_resolve_persisted_session_open(
+  request: RuntimeUiSessionOpenRequest
+): Json? {
+  let normalized_app_id = Runtime.json_to_str(request.app_id);
+  if (normalized_app_id == "") {
+    return null;
+  }
+
+  let normalized_session_context = request.context;
+  let normalized_open_args = request.args;
+  let session_id = runtime_ui_build_session_id(normalized_app_id, normalized_session_context);
+  let requested_form_id = Runtime.json_to_str(request.form_id);
+  if (requested_form_id != "") {
+    let requested_form_instance_id = runtime_ui_build_form_session_id(
+      normalized_app_id,
+      requested_form_id,
+      normalized_session_context
+    );
+    let requested_form_session = runtime_ui_get_form_session(requested_form_instance_id);
+    if (
+      requested_form_session != null
+      && runtime_ui_form_session_context_matches(
+        requested_form_session,
+        normalized_session_context
+      )
+      && Runtime.json_to_str(requested_form_session.session_id) == session_id
+      && Runtime.json_to_str(requested_form_session.app_id) == normalized_app_id
+      && Runtime.json_to_str(requested_form_session.form_id) == requested_form_id
+      && runtime_ui_json_deep_equal(requested_form_session.open_args, normalized_open_args)
+    ) {
+      return runtime_ui_build_session_response(
+        session_id,
+        Runtime.json_to_str(requested_form_session.app_id),
+        Runtime.json_to_str(requested_form_session.form_id),
+        Runtime.json_to_str(requested_form_session.form_instance_id),
+        requested_form_session.revision,
+        requested_form_session.state_sync ?? {},
+        requested_form_session.messages ?? [],
+        true
+      );
+    }
+  }
+
+  let app_session = runtime_ui_get_app_session(session_id);
+  if (app_session is null) {
+    return null;
+  }
+  if (!runtime_ui_app_session_context_matches(app_session, normalized_session_context)) {
+    return null;
+  }
+
+  let runtime_context = runtime_ui_require_app_runtime_context(normalized_app_id);
+  let app_node_json = runtime_context["app_node"];
+  let form_lookup = runtime_context["form_lookup"];
+  let normalized_form_id = runtime_ui_resolve_requested_form_id_with_lookup(
+    app_node_json,
+    request.form_id,
+    form_lookup
+  );
+  if (normalized_form_id == "") {
+    return null;
+  }
+
+  let form_metadata = runtime_ui_find_detailed_form_metadata_in_lookup(
+    form_lookup,
+    normalized_form_id
+  );
+  if (form_metadata == null) {
+    return null;
+  }
+  let effective_form_id = Runtime.json_to_str(form_metadata["form_id"]);
+  if (effective_form_id == "") {
+    effective_form_id = normalized_form_id;
+  }
+
+  let normalized_session_context = request.context;
+  let normalized_open_args = request.args;
+  let session_id = runtime_ui_build_session_id(normalized_app_id, normalized_session_context);
+  let form_instance_id = runtime_ui_build_form_session_id(
+    normalized_app_id,
+    effective_form_id,
+    normalized_session_context
+  );
+  let form_session = runtime_ui_get_form_session(form_instance_id);
+  if (form_session is null) {
+    return null;
+  }
+  if (!runtime_ui_form_session_context_matches(form_session, normalized_session_context)) {
+    return null;
+  }
+  if (
+    Runtime.json_to_str(form_session.session_id) != session_id
+    || Runtime.json_to_str(form_session.app_id) != normalized_app_id
+    || Runtime.json_to_str(form_session.form_id) != effective_form_id
+    || !runtime_ui_json_deep_equal(form_session.open_args, normalized_open_args)
+  ) {
+    return null;
+  }
+
+  return runtime_ui_build_session_response(
+    Runtime.json_to_str(app_session.session_id),
+    Runtime.json_to_str(form_session.app_id),
+    Runtime.json_to_str(form_session.form_id),
+    Runtime.json_to_str(form_session.form_instance_id),
+    form_session.revision,
+    form_session.state_sync ?? {},
+    form_session.messages ?? [],
+    true
+  );
+}
+
+public function runtime_ui_session_open(request: RuntimeUiSessionOpenRequest): Json {
+  let existing_session_response = runtime_ui_try_resolve_persisted_session_open(request);
+  if (existing_session_response != null) {
+    return existing_session_response;
+  }
+  let open_runtime = runtime_ui_prepare_open_form_runtime(request);
+  return runtime_ui_build_session_response(
+    Runtime.json_to_str(open_runtime["session_id"]),
+    Runtime.json_to_str(open_runtime["app_id"]),
+    Runtime.json_to_str(open_runtime["form_id"]),
+    Runtime.json_to_str(open_runtime["form_instance_id"]),
+    Runtime.json_to_i64(open_runtime["revision"]),
+    open_runtime["state_sync"] ?? {},
+    open_runtime["messages"] ?? [],
+    true
+  );
+}
+
+public function runtime_ui_session_resume(request: RuntimeUiSessionResumeRequest): Json {
+  runtime_ui_require_resumable_session_context(
+    request.session_id,
+    request.form_instance_id,
+    request.app_id,
+    request.form_id,
+    request.context
+  );
+  let app_session = runtime_ui_get_app_session(
+    Runtime.json_to_str(request.session_id)
+  );
+  let form_session = runtime_ui_get_form_session(
+    Runtime.json_to_str(request.form_instance_id)
+  );
+  let normalized_revision = Runtime.json_to_i64(form_session["revision"]);
+  if (!runtime_ui_touch_session_context(
+    app_session,
+    form_session,
+    normalized_revision,
+    request.context
+  )) {
+    raise runtime_ui_lookup_session_context_persist_failed;
+  }
+
+  return runtime_ui_build_session_response(
+    Runtime.json_to_str(app_session["session_id"]),
+    Runtime.json_to_str(form_session["app_id"]),
+    Runtime.json_to_str(form_session["form_id"]),
+    Runtime.json_to_str(form_session["form_instance_id"]),
+    normalized_revision,
+    form_session["state_sync"] ?? {},
+    form_session["messages"] ?? [],
+    true
+  );
+}
+
+public function runtime_ui_apply(request: RuntimeUiApplyRequest): Json {
+  let normalized_session_id = Runtime.json_to_str(request.session_id);
+  let normalized_form_instance_id = Runtime.json_to_str(request.form_instance_id);
+  let normalized_app_id = Runtime.json_to_str(request.app_id);
+  let normalized_form_id = Runtime.json_to_str(request.form_id);
+  let normalized_state_sync = request.state_sync;
+  let normalized_revision = Runtime.json_to_i64(request["revision"]);
+  let normalized_event = request.event;
+  let normalized_session_context = request.context;
+  let normalized_form_state = null;
+  let normalized_ui_state = null;
+  let effective_app_id = normalized_app_id;
+  let effective_form_id = normalized_form_id;
+
+  if (normalized_session_id == "") {
+    raise runtime_ui_apply_session_id_required;
+  }
+  if (normalized_form_instance_id == "") {
+    raise runtime_ui_apply_form_instance_id_required;
+  }
+  if (normalized_revision <= 0) {
+    raise runtime_ui_apply_revision_required;
+  }
+  if (normalized_state_sync == null) {
+    raise runtime_ui_apply_state_sync_required;
+  }
+  normalized_form_state = normalized_state_sync["form"];
+  normalized_ui_state = normalized_state_sync["uiState"];
+  if (normalized_form_state == null) {
+    raise runtime_ui_apply_state_sync_form_required;
+  }
+
+  let next_revision = normalized_revision + 1;
+  let app_session = runtime_ui_get_app_session(normalized_session_id);
+  let form_session = runtime_ui_get_form_session(normalized_form_instance_id);
+  let apply_session_context = runtime_ui_require_apply_session_context(
+    app_session,
+    form_session,
+    normalized_session_context,
+    normalized_app_id,
+    normalized_form_id
+  );
+  app_session = apply_session_context["app_session"];
+  form_session = apply_session_context["form_session"];
+  effective_app_id = Runtime.json_to_str(apply_session_context["app_id"]);
+  effective_form_id = Runtime.json_to_str(apply_session_context["form_id"]);
+
+  let runtime_context = runtime_ui_require_app_runtime_context(effective_app_id);
+  let app_node_json = runtime_context["app_node"];
+  let form_lookup = runtime_context["form_lookup"];
+  let form_metadata = runtime_ui_find_detailed_form_metadata_in_lookup(
+    form_lookup,
+    effective_form_id
+  );
+  if (form_metadata == null) {
+    raise runtime_ui_apply_form_metadata_not_found;
+  }
+  let internal_form_state = runtime_ui_build_internal_form_state(
+    form_metadata,
+    normalized_form_state,
+    form_session["open_args"]
+  );
+  let execution_messages: Json = [];
+  let execution_effects: Json = [];
+  let execution_navigation: Json = null;
+  let execution_transfer_payload: Json = null;
+  let execution_handled = false;
+  let execution_control_id = "";
+  let execution_control_kind = "";
+  let execution_event_name = "";
+  let execution_handler = "";
+  let execution_dispatch_target = "";
+  let sync_only_grid_source_handler = "";
+  let execution_control_metadata = null;
+  let execution_button_metadata = null;
+  let persisted_ui_state = form_session["state_sync"]["uiState"];
+  let response_grid_envelope = {};
+
+  if (normalized_event != null) {
+    let execution_event_identity = runtime_ui_require_apply_event_identity(normalized_event);
+    execution_event_name = Runtime.json_to_str(execution_event_identity["event_name"]);
+    execution_control_id = Runtime.json_to_str(execution_event_identity["control_id"]);
+
+    let execution_control_context = runtime_ui_resolve_apply_event_control_context(
+      form_metadata,
+      execution_control_id
+    );
+    execution_control_metadata = execution_control_context["control_metadata"];
+    execution_button_metadata = execution_control_context["button_metadata"];
+    execution_control_kind = Runtime.json_to_str(execution_control_context["control_kind"]);
+    execution_handler = runtime_ui_resolve_apply_event_handler(normalized_event);
+    execution_dispatch_target = runtime_ui_resolve_apply_event_dispatch_target(
+      normalized_event
+    );
+    let execution_targets = runtime_ui_resolve_apply_execution_targets(
+      execution_button_metadata,
+      execution_handler,
+      execution_dispatch_target,
+      form_lookup,
+      effective_form_id,
+      execution_control_id
+    );
+    execution_handler = Runtime.json_to_str(execution_targets["handler"]);
+    execution_dispatch_target = Runtime.json_to_str(execution_targets["dispatch_target"]);
+    if (runtime_ui_sync_only_grid_event(execution_control_kind, execution_event_name)) {
+      sync_only_grid_source_handler = execution_handler;
+      execution_handler = "";
+      execution_dispatch_target = "";
+    }
+    let execution_requires_handler = runtime_ui_dispatch_target_requires_handler(
+      execution_dispatch_target
+    );
+    if (
+      execution_requires_handler
+      && execution_handler == ""
+      && !runtime_ui_sync_only_grid_event(execution_control_kind, execution_event_name)
+    ) {
+      raise runtime_ui_apply_event_handler_required;
+    }
+    let execution_handler_reference_status = runtime_ui_resolve_handler_reference_status(
+      execution_handler
+    );
+    if (execution_handler_reference_status == "unsupported_kind") {
+      raise runtime_ui_apply_event_handler_unsupported_declaration_kind;
+    }
+    if (execution_handler_reference_status == "invalid_return_contract") {
+      raise runtime_ui_apply_event_handler_invalid_return_contract;
+    }
+    if (execution_handler_reference_status != "resolved") {
+      raise runtime_ui_apply_event_handler_not_found;
+    }
+
+    execution_messages = runtime_ui_build_apply_execution_messages(
+      normalized_session_id,
+      normalized_form_instance_id,
+      effective_app_id,
+      effective_form_id,
+      next_revision
+    );
+  }
+
+  runtime_ui_require_materialized_apply_control_sessions(
+    normalized_form_instance_id,
+    normalized_session_id,
+    effective_app_id,
+    effective_form_id,
+    form_metadata,
+    next_revision,
+    null
+  );
+  let staged_control_runtime_updates: Json = [];
+  if (execution_handler != "" || execution_dispatch_target != "") {
+    let projected_apply_form_state = runtime_ui_require_projected_apply_form_state(
+      normalized_session_id,
+      normalized_form_instance_id,
+      effective_app_id,
+      effective_form_id,
+      next_revision,
+      form_metadata,
+      internal_form_state,
+      normalized_ui_state,
+      persisted_ui_state
+    );
+    internal_form_state = projected_apply_form_state["internal_form_state"];
+    normalized_form_state = projected_apply_form_state["form_state"];
+  } else {
+    let pre_execution_sync_target_control_id =
+      runtime_ui_resolve_post_execution_sync_target_control_id(
+        execution_control_metadata,
+        execution_control_id,
+        execution_control_kind,
+        execution_event_name
+      );
+    let synced_form_state = runtime_ui_sync_control_sessions(
+      normalized_session_id,
+      normalized_form_instance_id,
+      effective_app_id,
+      effective_form_id,
+      next_revision,
+      form_metadata,
+      internal_form_state.state,
+      normalized_ui_state,
+      persisted_ui_state,
+      pre_execution_sync_target_control_id,
+      sync_only_grid_source_handler
+    );
+    if (synced_form_state == null) {
+      raise runtime_ui_apply_control_state_sync_failed;
+    }
+    let adopted_synced_form_state = runtime_ui_adopt_synced_form_state(
+      form_metadata,
+      internal_form_state,
+      synced_form_state
+    );
+    internal_form_state = adopted_synced_form_state["internal_form_state"];
+    staged_control_runtime_updates = adopted_synced_form_state["control_runtime_updates"];
+    normalized_form_state = adopted_synced_form_state["form_state"];
+    response_grid_envelope = adopted_synced_form_state["grid_response"] ?? {};
+  }
+  if (execution_handler != "" || execution_dispatch_target != "") {
+    let execution_result = runtime_ui_require_apply_execution_result(
+      normalized_session_id,
+      normalized_form_instance_id,
+      effective_app_id,
+      effective_form_id,
+      next_revision,
+      execution_control_id,
+      execution_control_kind,
+      execution_event_name,
+      execution_handler,
+      execution_dispatch_target,
+      form_metadata,
+      internal_form_state,
+      normalized_event
+    );
+    let execution_result_state = runtime_ui_apply_execution_result_state(
+      form_metadata,
+      internal_form_state,
+      execution_result
+    );
+    execution_handled = execution_result_state["handled"];
+    internal_form_state = execution_result_state["internal_form_state"];
+    normalized_form_state = execution_result_state["form_state"];
+    let execution_result_outputs = runtime_ui_apply_execution_result_outputs(
+      execution_result,
+      execution_messages,
+      normalized_session_id,
+      normalized_form_instance_id,
+      effective_app_id,
+      effective_form_id,
+      next_revision,
+      execution_effects,
+      execution_navigation,
+      execution_transfer_payload
+    );
+    execution_messages = execution_result_outputs["messages"];
+    execution_effects = execution_result_outputs["effects"];
+    execution_navigation = execution_result_outputs["navigation"];
+    execution_transfer_payload = execution_result_outputs["transfer_payload"];
+
+    let post_execution_sync_target_control_id =
+      runtime_ui_resolve_post_execution_sync_target_control_id(
+        execution_control_metadata,
+        execution_control_id,
+        execution_control_kind,
+        execution_event_name
+      );
+    let synced_execution_form_state = runtime_ui_sync_control_sessions(
+      normalized_session_id,
+      normalized_form_instance_id,
+      effective_app_id,
+      effective_form_id,
+      next_revision,
+      form_metadata,
+      internal_form_state.state,
+      null,
+      persisted_ui_state,
+      post_execution_sync_target_control_id,
+      sync_only_grid_source_handler
+    );
+    if (synced_execution_form_state == null) {
+      raise runtime_ui_apply_executed_control_state_sync_failed;
+    }
+    let adopted_execution_form_state = runtime_ui_adopt_synced_form_state(
+      form_metadata,
+      internal_form_state,
+      synced_execution_form_state
+    );
+    internal_form_state = adopted_execution_form_state["internal_form_state"];
+    staged_control_runtime_updates = adopted_execution_form_state["control_runtime_updates"];
+    normalized_form_state = adopted_execution_form_state["form_state"];
+    response_grid_envelope = adopted_execution_form_state["grid_response"] ?? {};
+  }
+
+  let next_state_sync = runtime_ui_build_apply_state_sync(
+    normalized_session_id,
+    normalized_form_instance_id,
+    next_revision,
+    form_metadata,
+    normalized_form_state,
+    staged_control_runtime_updates,
+    persisted_ui_state
+  );
+
+  runtime_ui_require_persisted_apply_bundle(
+    app_session,
+    form_session,
+    normalized_revision,
+    normalized_session_context,
+    next_revision,
+    form_metadata,
+    internal_form_state,
+    next_state_sync,
+    execution_messages,
+    staged_control_runtime_updates,
+    null
+  );
+
+  let apply_response: Json = {
+    "session_id": normalized_session_id,
+    "form_instance_id": normalized_form_instance_id,
+    "revision": next_revision,
+    "state_sync": next_state_sync,
+    "messages": execution_messages,
+    "effects": execution_effects,
+    "navigation": execution_navigation,
+    "data": execution_transfer_payload,
+    "__ui": {
+      "event": normalized_event,
+      "debug": null,
+      "binding": runtime_ui_build_form_binding_context(
+        form_metadata,
+        internal_form_state.state
+      )
+    }
+  };
+  let apply_grid_response_control_id = runtime_ui_resolve_apply_grid_response_control_id(
+    form_metadata,
+    execution_control_id,
+    normalized_state_sync["uiState"] ?? {},
+    normalized_ui_state
+  );
+  let apply_grid_response = response_grid_envelope;
+  if (apply_grid_response["rows"] == null) {
+    apply_grid_response = runtime_ui_build_grid_response_envelope(
+      form_metadata,
+      normalized_form_state,
+      apply_grid_response_control_id
+    );
+  }
+  return runtime_ui_merge_grid_response_envelope(apply_response, apply_grid_response);
+}
+
+public function runtime_ui_session_sync(request: RuntimeUiSessionSyncRequest): Json {
+  let apply_request = Runtime.json_parse("{}");
+  apply_request["session_id"] = request.session_id;
+  apply_request["form_instance_id"] = request.form_instance_id;
+  apply_request["app_id"] = request.app_id;
+  apply_request["form_id"] = request.form_id;
+  apply_request["revision"] = request.revision;
+  apply_request["state_sync"] = request.state_sync;
+  apply_request["event"] = null;
+  apply_request["context"] = request.context;
+
+  let apply_response = runtime_ui_apply(apply_request);
+  let form_session = runtime_ui_get_form_session(request.form_instance_id);
+  let active = false;
+  let response_app_id = Runtime.json_to_str(request.app_id);
+  let response_form_id = Runtime.json_to_str(request.form_id);
+  if (form_session != null) {
+    active = form_session.active == true;
+    if (response_app_id == "") {
+      response_app_id = Runtime.json_to_str(form_session.app_id);
+    }
+    if (response_form_id == "") {
+      response_form_id = Runtime.json_to_str(form_session.form_id);
+    }
+  }
+
+  let sync_response = runtime_ui_build_session_response(
+    Runtime.json_to_str(apply_response["session_id"]),
+    response_app_id,
+    response_form_id,
+    Runtime.json_to_str(apply_response["form_instance_id"]),
+    Runtime.json_to_i64(apply_response["revision"]),
+    apply_response["state_sync"] ?? {},
+    apply_response["messages"] ?? [],
+    active
+  );
+  return runtime_ui_merge_grid_response_envelope(sync_response, apply_response);
+}
+
+public function runtime_ui_session_close(request: RuntimeUiSessionCloseRequest): Json {
+  let normalized_session_id = Runtime.json_to_str(request.session_id);
+  let normalized_form_instance_id = Runtime.json_to_str(request.form_instance_id);
+  let normalized_app_id = Runtime.json_to_str(request.app_id);
+  let normalized_form_id = Runtime.json_to_str(request.form_id);
+  let app_session = runtime_ui_get_app_session(normalized_session_id);
+  if (app_session is null) {
+    raise runtime_ui_lookup_app_session_not_found;
+  }
+
+  let response_form_instance_id = normalized_form_instance_id;
+  let response_app_id = normalized_app_id;
+  let response_form_id = normalized_form_id;
+  let response_revision = 0;
+  let response_state_sync: Json = {};
+  let response_messages: Json = [];
+
+  if (normalized_form_instance_id != "") {
+    let close_context = runtime_ui_require_resumable_session_context(
+      normalized_session_id,
+      normalized_form_instance_id,
+      normalized_app_id,
+      normalized_form_id,
+      request.context
+    );
+    let form_session = close_context["form_session"];
+    response_form_instance_id = Runtime.json_to_str(form_session["form_instance_id"]);
+    response_app_id = Runtime.json_to_str(form_session["app_id"]);
+    response_form_id = Runtime.json_to_str(form_session["form_id"]);
+    response_revision = Runtime.json_to_i64(form_session["revision"]);
+    response_state_sync = form_session["state_sync"] ?? {};
+    response_messages = form_session["messages"] ?? [];
+    form_session["active"] = false;
+    runtime_ui_save_form_session(form_session);
+    runtime_ui_close_form_control_sessions(response_form_instance_id);
+  } else {
+    select var session_form_sessions: FormSession[]
+    from FormSession
+      where session_id = normalized_session_id
+        and active = true;
+
+    for (form_session in session_form_sessions) {
+      if (response_form_instance_id == "") {
+        response_form_instance_id = Runtime.json_to_str(form_session.form_instance_id);
+        response_app_id = Runtime.json_to_str(form_session.app_id);
+        response_form_id = Runtime.json_to_str(form_session.form_id);
+        response_revision = form_session.revision;
+        response_state_sync = form_session.state_sync ?? {};
+        response_messages = form_session.messages ?? [];
+      }
+      form_session["active"] = false;
+      runtime_ui_save_form_session(form_session);
+      runtime_ui_close_form_control_sessions(form_session.form_instance_id);
+    }
+  }
+
+  app_session["active"] = false;
+  runtime_ui_save_app_session(app_session);
+
+  return runtime_ui_build_session_response(
+    Runtime.json_to_str(app_session.session_id),
+    response_app_id,
+    response_form_id,
+    response_form_instance_id,
+    response_revision,
+    response_state_sync,
+    response_messages,
+    false
+  );
+}
+
+public function runtime_ui_fire_event(request: RuntimeUiFireEventRequest): Json {
+  let apply_request = Runtime.json_parse("{}");
+  let state_sync = request.state_sync ?? {};
+  let event_payload = request.payload;
+  let target_form_id = request["target_form_id"] ?? request["targetFormId"];
+  if (target_form_id == null && event_payload != null) {
+    target_form_id = event_payload["target_form_id"]
+      ?? event_payload["targetFormId"]
+      ?? event_payload["form_id"]
+      ?? event_payload["form"];
+  }
+  apply_request["session_id"] = request.session_id;
+  apply_request["form_instance_id"] = request.form_instance_id;
+  apply_request["app_id"] = request.app_id;
+  apply_request["form_id"] = request.form_id;
+  apply_request["revision"] = request.revision;
+  apply_request["state_sync"] = {
+    "form": state_sync["form"],
+    "uiState": state_sync["uiState"]
+  };
+  apply_request["event"] = {
+    "context": request.context,
+    "control_id": request.control_id,
+    "event_name": request.event_name,
+    "payload": event_payload,
+    "target_form_id": target_form_id,
+    "targetFormId": target_form_id,
+    "form_id": event_payload != null ? (event_payload["form_id"] ?? event_payload["form"]) : null,
+    "form": event_payload != null ? (event_payload["form"] ?? event_payload["form_id"]) : null
+  };
+  apply_request["context"] = request.context;
+  let apply_response = runtime_ui_apply(apply_request);
+  let form_session = runtime_ui_get_form_session(request.form_instance_id);
+  let active = false;
+  let response_app_id = Runtime.json_to_str(request.app_id);
+  let response_form_id = Runtime.json_to_str(request.form_id);
+  if (form_session != null) {
+    active = form_session.active == true;
+    if (response_app_id == "") {
+      response_app_id = Runtime.json_to_str(form_session.app_id);
+    }
+    if (response_form_id == "") {
+      response_form_id = Runtime.json_to_str(form_session.form_id);
+    }
+  }
+  let event_response = runtime_ui_build_event_response(
+    Runtime.json_to_str(apply_response["session_id"]),
+    response_app_id,
+    response_form_id,
+    Runtime.json_to_str(apply_response["form_instance_id"]),
+    Runtime.json_to_i64(apply_response["revision"]),
+    apply_response["state_sync"] ?? {},
+    apply_response["messages"] ?? [],
+    active,
+    apply_response["effects"] ?? [],
+    apply_response["navigation"],
+    apply_response["data"]
+  );
+  return runtime_ui_merge_grid_response_envelope(event_response, apply_response);
+}
+
+private function runtime_ui_merge_grid_response_envelope(
+  response: Json,
+  grid_response: Json
+): Json {
+  if (grid_response["rows"] != null) {
+    response["rows"] = grid_response["rows"];
+  }
+  if (grid_response["totalRows"] != null) {
+    response["totalRows"] = grid_response["totalRows"];
+  }
+  if (grid_response["startRow"] != null) {
+    response["startRow"] = grid_response["startRow"];
+  }
+  if (grid_response["rowCount"] != null) {
+    response["rowCount"] = grid_response["rowCount"];
+  }
+  return response;
+}
+
+private function runtime_ui_resolve_session_form_metadata(
+  app_id: string,
+  form_id: string
+): Json {
+  let app_metadata = runtime_ui_find_detailed_app_metadata(app_id);
+  if (app_metadata == null) {
+    return {
+      "app": null,
+      "form": null
+    };
+  }
+
+  return {
+    "app": app_metadata,
+    "form": runtime_ui_find_form_metadata(app_metadata, form_id)
+  };
+}
+
+private function runtime_ui_resolve_active_session_form_context(
+  session_id: string,
+  form_instance_id: string,
+  revision: int,
+  requested_app_id: string,
+  requested_form_id: string,
+  session_context: Json
+): Json {
+  let app_session = runtime_ui_get_app_session(session_id);
+  let form_session = runtime_ui_get_form_session(form_instance_id);
+  let ownership_matches = false;
+  let session_context_matches = false;
+  let revision_matches = false;
+  let app_id_matches = false;
+  let form_id_matches = false;
+  let metadata_context = null;
+
+  if (app_session != null && form_session != null) {
+    ownership_matches = form_session.session_id == session_id;
+    session_context_matches = runtime_ui_session_context_matches(
+      app_session,
+      form_session,
+      session_context
+    );
+    revision_matches = form_session.revision == revision;
+    app_id_matches = requested_app_id == "" || requested_app_id == form_session.app_id;
+    form_id_matches = requested_form_id == "" || requested_form_id == form_session.form_id;
+    if (
+      ownership_matches
+      && session_context_matches
+      && revision_matches
+      && app_id_matches
+      && form_id_matches
+    ) {
+      metadata_context = runtime_ui_resolve_session_form_metadata(
+        form_session.app_id,
+        form_session.form_id
+      );
+    }
+  }
+
+  return {
+    "app_session": app_session,
+    "form_session": form_session,
+    "ownership_matches": ownership_matches,
+    "session_context_matches": session_context_matches,
+    "revision_matches": revision_matches,
+    "app_id_matches": app_id_matches,
+    "form_id_matches": form_id_matches,
+    "metadata_context": metadata_context
+  };
+}
+
+private function runtime_ui_resolve_optional_control_context(
+  form_instance_id: string,
+  control_id: string,
+  form_metadata: Json
+): Json {
+  let normalized_control_id = Runtime.json_to_str(control_id);
+  if (normalized_control_id == "") {
+    return {
+      "control_metadata": null
+    };
+  }
+
+  let control_metadata = runtime_ui_find_control_metadata(form_metadata, normalized_control_id);
+
+  return {
+    "control_metadata": control_metadata
+  };
+}
+
+public function runtime_ui_lookup(request: RuntimeUiLookupRequest): Json {
+  let normalized_session_id = Runtime.json_to_str(request.session_id);
+  let normalized_form_instance_id = Runtime.json_to_str(request.form_instance_id);
+  let normalized_control_id = Runtime.json_to_str(request.control_id);
+  let normalized_query = Runtime.json_to_str(request.query);
+  let normalized_revision = Runtime.json_to_i64(request["revision"]);
+  let normalized_app_id = Runtime.json_to_str(request.app_id);
+  let normalized_form_id = Runtime.json_to_str(request.form_id);
+  let normalized_session_context = request.context;
+
+  if (normalized_session_id == "") {
+    raise runtime_ui_lookup_session_id_required;
+  }
+  if (normalized_form_instance_id == "") {
+    raise runtime_ui_lookup_form_instance_id_required;
+  }
+  if (normalized_revision <= 0) {
+    raise runtime_ui_lookup_revision_required;
+  }
+
+  let session_form_context = runtime_ui_resolve_active_session_form_context(
+    normalized_session_id,
+    normalized_form_instance_id,
+    normalized_revision,
+    normalized_app_id,
+    normalized_form_id,
+    normalized_session_context
+  );
+  let app_session = session_form_context["app_session"];
+  let form_session = session_form_context["form_session"];
+  if (app_session is null) {
+    raise runtime_ui_lookup_app_session_not_found;
+  }
+  if (form_session is null) {
+    raise runtime_ui_lookup_form_session_not_found;
+  }
+  if (session_form_context["ownership_matches"] != true) {
+    raise runtime_ui_lookup_session_ownership_mismatch;
+  }
+  if (session_form_context["session_context_matches"] != true) {
+    raise runtime_ui_lookup_session_context_mismatch;
+  }
+  if (session_form_context["revision_matches"] != true) {
+    raise runtime_ui_lookup_revision_mismatch;
+  }
+  if (session_form_context["app_id_matches"] != true) {
+    raise runtime_ui_lookup_app_id_mismatch;
+  }
+  if (session_form_context["form_id_matches"] != true) {
+    raise runtime_ui_lookup_form_id_mismatch;
+  }
+
+  let metadata_context = session_form_context["metadata_context"];
+  let app_metadata = metadata_context["app"];
+  if (app_metadata == null) {
+    raise runtime_ui_lookup_app_metadata_not_found;
+  }
+  let form_metadata = metadata_context["form"];
+  if (form_metadata == null) {
+    raise runtime_ui_lookup_form_metadata_not_found;
+  }
+
+  let control_context = runtime_ui_resolve_optional_control_context(
+    normalized_form_instance_id,
+    normalized_control_id,
+    form_metadata
+  );
+  let control_metadata = control_context["control_metadata"];
+  if (normalized_control_id != "") {
+    if (control_metadata == null) {
+      raise runtime_ui_lookup_control_metadata_not_found;
+    }
+  }
+
+  let resolved_table = runtime_ui_resolve_lookup_table(
+    control_metadata,
+    request.table,
+    request.origin
+  );
+  if (resolved_table == "") {
+    raise runtime_ui_lookup_table_required;
+  }
+  let resolved_field = runtime_ui_resolve_lookup_field(
+    control_metadata,
+    request.field_name,
+    request.origin
+  );
+  let resolved_associated_fields = runtime_ui_resolve_lookup_associated_fields(
+    control_metadata,
+    request.associated_fields,
+    request.origin
+  );
+  let resolved_display_field = runtime_ui_resolve_lookup_display_field(
+    control_metadata,
+    request.origin,
+    resolved_field,
+    resolved_associated_fields
+  );
+
+  if (!runtime_ui_touch_session_context(
+    app_session,
+    form_session,
+    normalized_revision,
+    normalized_session_context
+  )) {
+    raise runtime_ui_lookup_session_context_persist_failed;
+  }
+
+  return {
+    "session_id": normalized_session_id,
+    "form_instance_id": normalized_form_instance_id,
+    "revision": normalized_revision,
+    "control_id": normalized_control_id,
+    "table": resolved_table,
+    "field": resolved_field,
+    "query": normalized_query,
+    "rows": [],
+    "associatedFields": resolved_associated_fields,
+    "displayField": resolved_display_field,
+    "state_sync": form_session.state_sync ?? {}
+  };
+}
+
+public function runtime_ui_export(request: RuntimeUiExportRequest): Json {
+  let normalized_session_id = Runtime.json_to_str(request.session_id);
+  let normalized_form_instance_id = Runtime.json_to_str(request.form_instance_id);
+  let normalized_control_id = Runtime.json_to_str(request.control_id);
+  let normalized_format = Runtime.json_to_str(request.format);
+  let normalized_revision = Runtime.json_to_i64(request["revision"]);
+  let normalized_app_id = Runtime.json_to_str(request.app_id);
+  let normalized_form_id = Runtime.json_to_str(request.form_id);
+  let normalized_session_context = request.context;
+
+  if (normalized_session_id == "") {
+    raise runtime_ui_export_session_id_required;
+  }
+  if (normalized_form_instance_id == "") {
+    raise runtime_ui_export_form_instance_id_required;
+  }
+  if (normalized_revision <= 0) {
+    raise runtime_ui_export_revision_required;
+  }
+  if (normalized_format == "") {
+    raise runtime_ui_export_format_required;
+  }
+  if (normalized_format != "json") {
+    raise runtime_ui_export_format_unsupported;
+  }
+
+  let session_form_context = runtime_ui_resolve_active_session_form_context(
+    normalized_session_id,
+    normalized_form_instance_id,
+    normalized_revision,
+    normalized_app_id,
+    normalized_form_id,
+    normalized_session_context
+  );
+  let app_session = session_form_context["app_session"];
+  let form_session = session_form_context["form_session"];
+  if (app_session is null) {
+    raise runtime_ui_export_app_session_not_found;
+  }
+  if (form_session is null) {
+    raise runtime_ui_export_form_session_not_found;
+  }
+  if (session_form_context["ownership_matches"] != true) {
+    raise runtime_ui_export_session_ownership_mismatch;
+  }
+  if (session_form_context["session_context_matches"] != true) {
+    raise runtime_ui_export_session_context_mismatch;
+  }
+  if (session_form_context["revision_matches"] != true) {
+    raise runtime_ui_export_revision_mismatch;
+  }
+  if (session_form_context["app_id_matches"] != true) {
+    raise runtime_ui_export_app_id_mismatch;
+  }
+  if (session_form_context["form_id_matches"] != true) {
+    raise runtime_ui_export_form_id_mismatch;
+  }
+
+  let metadata_context = session_form_context["metadata_context"];
+  let app_metadata = metadata_context["app"];
+  if (app_metadata == null) {
+    raise runtime_ui_export_app_metadata_not_found;
+  }
+  let form_metadata = metadata_context["form"];
+  if (form_metadata == null) {
+    raise runtime_ui_export_form_metadata_not_found;
+  }
+
+  let control_context = runtime_ui_resolve_optional_control_context(
+    normalized_form_instance_id,
+    normalized_control_id,
+    form_metadata
+  );
+  if (normalized_control_id != "") {
+    if (control_context["control_metadata"] == null) {
+      raise runtime_ui_export_control_metadata_not_found;
+    }
+  }
+
+  let file_name = form_session.app_id + "." + form_session.form_id;
+  if (normalized_control_id != "") {
+    file_name = file_name + "." + normalized_control_id;
+  }
+  file_name = file_name + "." + normalized_format;
+
+  if (!runtime_ui_touch_session_context(
+    app_session,
+    form_session,
+    normalized_revision,
+    normalized_session_context
+  )) {
+    raise runtime_ui_export_session_context_persist_failed;
+  }
+
+  return {
+    "session_id": normalized_session_id,
+    "form_instance_id": normalized_form_instance_id,
+    "revision": normalized_revision,
+    "app_id": form_session.app_id,
+    "form_id": form_session.form_id,
+    "control_id": normalized_control_id,
+    "file": {
+      "name": file_name,
+      "content_type": "application/json",
+      "body": form_session.state_sync ?? {}
+    }
+  };
+}
+
+@http(method: GET, path: "/ui/catalog")
+public function runtime_ui_http_get_catalog(): Json {
+  return runtime_ui_get_catalog();
+}
+
+@http(method: GET, path: "/ui/apps/{app_id}")
+public function runtime_ui_http_get_app(app_id: string): Json {
+  return runtime_ui_get_app(app_id);
+}
+
+@http(method: GET, path: "/ui/app-info/{app_name}")
+public function runtime_ui_http_get_app_info(app_name: string): Json {
+  return runtime_ui_get_app_info(app_name);
+}
+
+private function runtime_ui_http_request_value(
+  request: Json,
+  snake_case_name: string,
+  camel_case_name: string
+): Json {
+  let snake_case_value = request[snake_case_name];
+  if (snake_case_value != null) {
+    return snake_case_value;
+  }
+  return request[camel_case_name];
+}
+
+private function runtime_ui_http_request_app_identifier(request: Json): string {
+  let app_id = Runtime.json_to_str(runtime_ui_http_request_value(request, "app_id", "appId"));
+  if (app_id != "") {
+    return app_id;
+  }
+  return Runtime.json_to_str(runtime_ui_http_request_value(request, "app_name", "appName"));
+}
+
+private function runtime_ui_build_http_active_form_request_base(request: Json): Json {
+  let normalized_request = Runtime.json_parse("{}");
+  normalized_request["session_id"] = Runtime.json_to_str(
+    runtime_ui_http_request_value(request, "session_id", "sessionId")
+  );
+  normalized_request["form_instance_id"] = Runtime.json_to_str(
+    runtime_ui_http_request_value(request, "form_instance_id", "formInstanceId")
+  );
+  normalized_request["revision"] = Runtime.json_to_i64(request["revision"]);
+  normalized_request["app_id"] = Runtime.json_to_str(
+    runtime_ui_http_request_value(request, "app_id", "appId")
+  );
+  normalized_request["form_id"] = Runtime.json_to_str(
+    runtime_ui_http_request_value(request, "form_id", "formId")
+  );
+  normalized_request["control_id"] = Runtime.json_to_str(
+    runtime_ui_http_request_value(request, "control_id", "controlId")
+  );
+  normalized_request["context"] = request["context"];
+  return normalized_request;
+}
+
+private function runtime_ui_http_request_object_guard(request: Json): Json {
+  return request["object_guard"] ?? request["objectGuard"];
+}
+
+public function runtime_ui_build_object_guard_owner_context(
+  session_id: string,
+  form_instance_id: string
+): ObjectGuardOwnerContext? {
+  let normalized_session_id = Runtime.json_to_str(session_id);
+  let normalized_form_instance_id = Runtime.json_to_str(form_instance_id);
+  if (normalized_session_id == "" || normalized_form_instance_id == "") {
+    return null;
+  }
+
+  let owner = Runtime.json_parse("{}");
+  owner["session_id"] = normalized_session_id;
+  owner["form_instance_id"] = normalized_form_instance_id;
+
+  let form_session = runtime_ui_get_form_session(normalized_form_instance_id);
+  if (form_session != null) {
+    if (Runtime.json_to_str(form_session.user_id) != "") {
+      owner["user_id"] = Runtime.json_to_str(form_session.user_id);
+    }
+    if (Runtime.json_to_str(form_session.tenant_id) != "") {
+      owner["tenant_id"] = Runtime.json_to_str(form_session.tenant_id);
+    }
+  }
+
+  let app_session = runtime_ui_get_app_session(normalized_session_id);
+  if (app_session != null) {
+    if (Runtime.json_to_str(owner["user_id"]) == ""
+      && Runtime.json_to_str(app_session.user_id) != "") {
+      owner["user_id"] = Runtime.json_to_str(app_session.user_id);
+    }
+    if (Runtime.json_to_str(owner["tenant_id"]) == ""
+      && Runtime.json_to_str(app_session.tenant_id) != "") {
+      owner["tenant_id"] = Runtime.json_to_str(app_session.tenant_id);
+    }
+  }
+
+  return owner;
+}
+
+public function runtime_ui_build_object_guard_target_from_handler_context(
+  handler_context: Json
+): ObjectGuardTarget? {
+  if (handler_context == null) {
+    return null;
+  }
+
+  let event_binding = handler_context["event"]["binding"];
+  if (event_binding == null) {
+    return null;
+  }
+
+  let binding_type = Runtime.json_to_str(event_binding["type"]);
+  let binding_key_fields = event_binding["key_fields"] ?? [];
+  if (binding_type == "" || binding_key_fields == null) {
+    return null;
+  }
+
+  let binding_state = handler_context["binding_state"];
+  if (binding_state == null) {
+    binding_state = event_binding["state"] ?? handler_context["form_state"];
+  }
+  if (binding_state == null) {
+    return null;
+  }
+
+  let binding_members = Runtime.json_parse("{}");
+  for (entry in binding_key_fields) {
+    let field_name = Runtime.str_trim(Runtime.json_to_str(entry["value"] ?? entry));
+    if (field_name == "") {
+      continue;
+    }
+    binding_members[field_name] = Runtime.json_parse("{}");
+  }
+
+  let runtime_binding = runtime_object_create(
+    binding_type,
+    Runtime.json_to_str(event_binding["kind"] ?? "record"),
+    binding_members,
+    binding_state
+  );
+  return object_guard_build_target_from_runtime_object(
+    runtime_binding,
+    binding_key_fields,
+    null
+  );
+}
+
+private function runtime_ui_http_build_object_guard_target(request: Json): ObjectGuardTarget? {
+  let object_guard_request = runtime_ui_http_request_object_guard(request);
+  if (object_guard_request == null) {
+    return null;
+  }
+
+  let object_type = Runtime.json_to_str(
+    runtime_ui_http_request_value(object_guard_request, "object_type", "objectType")
+  );
+  let object_key = Runtime.json_to_str(
+    runtime_ui_http_request_value(object_guard_request, "object_key", "objectKey")
+  );
+  if (object_type == "" || object_key == "") {
+    return null;
+  }
+
+  let target = Runtime.json_parse("{}");
+  target["object_type"] = object_type;
+  target["object_key"] = object_key;
+  target["object_label"] = Runtime.json_to_str(
+    runtime_ui_http_request_value(object_guard_request, "object_label", "objectLabel")
+  );
+  return target;
+}
+
+private function runtime_ui_http_find_owner_object_guard_target(
+  session_id: string,
+  form_instance_id: string
+): ObjectGuardTarget? {
+  let normalized_session_id = Runtime.json_to_str(session_id);
+  let normalized_form_instance_id = Runtime.json_to_str(form_instance_id);
+  if (normalized_session_id == "" || normalized_form_instance_id == "") {
+    return null;
+  }
+
+  select var current_guard: SystemCurrentObjectGuard
+    where owner_session_id = normalized_session_id
+      and owner_form_instance_id = normalized_form_instance_id;
+  if (current_guard is null) {
+    return null;
+  }
+
+  let target = Runtime.json_parse("{}");
+  target["object_type"] = current_guard.object_type;
+  target["object_key"] = current_guard.object_key;
+  target["object_label"] = current_guard.object_label;
+  return target;
+}
+
+private function runtime_ui_http_build_materialized_object_guard_target(
+  app_id: string,
+  form_id: string,
+  form_instance_id: string
+): ObjectGuardTarget? {
+  let normalized_app_id = Runtime.json_to_str(app_id);
+  let normalized_form_id = Runtime.json_to_str(form_id);
+  let normalized_form_instance_id = Runtime.json_to_str(form_instance_id);
+  if (normalized_app_id == "" || normalized_form_id == "" || normalized_form_instance_id == "") {
+    return null;
+  }
+
+  let form_session = runtime_ui_get_form_session(normalized_form_instance_id);
+  if (form_session == null) {
+    return null;
+  }
+
+  let runtime_context = runtime_ui_require_app_runtime_context(normalized_app_id);
+  let form_lookup = runtime_context["form_lookup"];
+  let form_metadata = runtime_ui_find_detailed_form_metadata_in_lookup(
+    form_lookup,
+    normalized_form_id
+  );
+  if (form_metadata == null) {
+    return null;
+  }
+
+  let internal_form_state = runtime_ui_build_internal_form_state(
+    form_metadata,
+    form_session["state_sync"]["form"] ?? {},
+    form_session["open_args"]
+  );
+  internal_form_state = runtime_ui_sync_internal_form_state_binding(
+    form_metadata,
+    internal_form_state
+  );
+  return object_guard_build_target_from_runtime_object(
+    internal_form_state.binding_object,
+    internal_form_state.binding_key_fields ?? [],
+    null
+  );
+}
+
+private function runtime_ui_http_require_object_guard_apply_owner(
+  request: Json,
+  apply_request: Json
+): void {
+  let object_guard_request = runtime_ui_http_request_object_guard(request);
+  if (object_guard_request == null) {
+    return;
+  }
+
+  let target = runtime_ui_http_build_object_guard_target(request);
+  if (target == null) {
+    raise runtime_ui_apply_object_guard_target_invalid;
+  }
+
+  let assert_request = Runtime.json_parse("{}");
+  assert_request["target"] = target;
+  assert_request["owner"] = runtime_ui_http_build_object_guard_owner_context(
+    Runtime.json_to_str(apply_request["session_id"]),
+    Runtime.json_to_str(apply_request["form_instance_id"]),
+    request["context"]
+  );
+  let guard_result = object_guard_assert_owner(assert_request);
+  if (guard_result["ok"] == true) {
+    return;
+  }
+
+  let guard_code = Runtime.json_to_str(guard_result["code"]);
+  if (guard_code == "OBJ_GUARD_REQUIRED") {
+    raise runtime_ui_apply_object_guard_required;
+  }
+  if (guard_code == "OBJ_GUARD_HELD_BY_OTHER") {
+    raise runtime_ui_apply_object_guard_held_by_other;
+  }
+  raise runtime_ui_apply_object_guard_target_invalid;
+}
+
+private function runtime_ui_http_build_object_guard_owner_context(
+  session_id: string,
+  form_instance_id: string,
+  request_context: Json
+): ObjectGuardOwnerContext {
+  let owner = runtime_ui_build_object_guard_owner_context(session_id, form_instance_id);
+  if (owner == null) {
+    owner = Runtime.json_parse("{}");
+    owner["session_id"] = session_id;
+    owner["form_instance_id"] = form_instance_id;
+  }
+  if (request_context != null) {
+    let request_user_id = Runtime.json_to_str(
+      runtime_ui_http_request_value(request_context, "user_id", "userId")
+    );
+    let request_tenant_id = Runtime.json_to_str(
+      runtime_ui_http_request_value(request_context, "tenant_id", "tenantId")
+    );
+    if (request_user_id != "") {
+      owner["user_id"] = request_user_id;
+    }
+    if (request_tenant_id != "") {
+      owner["tenant_id"] = request_tenant_id;
+    }
+  }
+  return owner;
+}
+
+private function runtime_ui_http_object_guard_ttl_seconds(request: Json): Json {
+  let object_guard_request = runtime_ui_http_request_object_guard(request);
+  if (object_guard_request == null) {
+    return null;
+  }
+  return runtime_ui_http_request_value(
+    object_guard_request,
+    "ttl_seconds",
+    "ttlSeconds"
+  );
+}
+
+private function runtime_ui_http_attach_object_guard_refresh_result(
+  request: Json,
+  session_id: string,
+  form_instance_id: string,
+  request_context: Json,
+  response: Json
+): Json {
+  let target = runtime_ui_http_build_object_guard_target(request);
+  if (target == null || session_id == "" || form_instance_id == "") {
+    return response;
+  }
+
+  let refresh_request = Runtime.json_parse("{}");
+  refresh_request["target"] = target;
+  refresh_request["owner"] = runtime_ui_http_build_object_guard_owner_context(
+    session_id,
+    form_instance_id,
+    request_context
+  );
+  refresh_request["ttl_seconds"] = runtime_ui_http_object_guard_ttl_seconds(request);
+  response["object_guard"] = object_guard_refresh(refresh_request);
+  return response;
+}
+
+private function runtime_ui_http_close_object_guard_conflicted_session(
+  response: Json,
+  request_context: Json
+): Json {
+  let close_request = Runtime.json_parse("{}");
+  close_request["session_id"] = response["session_id"];
+  close_request["app_id"] = response["app_id"];
+  close_request["form_id"] = response["form_id"];
+  close_request["form_instance_id"] = response["form_instance_id"];
+  close_request["context"] = request_context;
+  return runtime_ui_session_close(close_request);
+}
+
+private function runtime_ui_http_invalid_object_guard_result(): Json {
+  let result = Runtime.json_parse("{}");
+  result["ok"] = false;
+  result["code"] = "OBJ_GUARD_TARGET_INVALID";
+  result["message"] = "object guard target is invalid or incomplete";
+  return result;
+}
+
+private function runtime_ui_http_attach_object_guard_acquire_result(
+  request: Json,
+  session_id: string,
+  form_instance_id: string,
+  request_context: Json,
+  response: Json
+): Json {
+  let object_guard_request = runtime_ui_http_request_object_guard(request);
+  let target = runtime_ui_http_build_materialized_object_guard_target(
+    Runtime.json_to_str(response["app_id"]),
+    Runtime.json_to_str(response["form_id"]),
+    form_instance_id
+  );
+  if (target == null) {
+    if (object_guard_request == null) {
+      return response;
+    }
+    let close_response = runtime_ui_http_close_object_guard_conflicted_session(
+      response,
+      request_context
+    );
+    close_response["object_guard"] = runtime_ui_http_invalid_object_guard_result();
+    return close_response;
+  }
+  if (session_id == "" || form_instance_id == "") {
+    return response;
+  }
+
+  let acquire_request = Runtime.json_parse("{}");
+  acquire_request["target"] = target;
+  acquire_request["owner"] = runtime_ui_http_build_object_guard_owner_context(
+    session_id,
+    form_instance_id,
+    request_context
+  );
+  acquire_request["ttl_seconds"] = runtime_ui_http_object_guard_ttl_seconds(request);
+  let guard_result = object_guard_acquire(acquire_request);
+  if (guard_result["ok"] != true) {
+    let close_response = runtime_ui_http_close_object_guard_conflicted_session(
+      response,
+      request_context
+    );
+    close_response["object_guard"] = guard_result;
+    return close_response;
+  }
+
+  response["object_guard"] = guard_result;
+  return response;
+}
+
+private function runtime_ui_http_attach_object_guard_release_result(
+  request: Json,
+  session_id: string,
+  form_instance_id: string,
+  request_context: Json,
+  response: Json
+): Json {
+  let effective_session_id = Runtime.json_to_str(session_id);
+  let effective_form_instance_id = Runtime.json_to_str(form_instance_id);
+  if (effective_session_id == "") {
+    effective_session_id = Runtime.json_to_str(
+      runtime_ui_http_request_value(request, "session_id", "sessionId")
+    );
+  }
+  if (effective_form_instance_id == "") {
+    effective_form_instance_id = Runtime.json_to_str(
+      runtime_ui_http_request_value(request, "form_instance_id", "formInstanceId")
+    );
+  }
+  let target = runtime_ui_http_build_object_guard_target(request);
+  if (target == null) {
+    target = runtime_ui_http_find_owner_object_guard_target(
+      effective_session_id,
+      effective_form_instance_id
+    );
+  }
+  if (target == null || effective_session_id == "" || effective_form_instance_id == "") {
+    return response;
+  }
+
+  let release_request = Runtime.json_parse("{}");
+  release_request["target"] = target;
+  release_request["owner"] = runtime_ui_http_build_object_guard_owner_context(
+    effective_session_id,
+    effective_form_instance_id,
+    request_context
+  );
+  response["object_guard"] = object_guard_release(release_request);
+  return response;
+}
+
+@http(method: POST, path: "/ui/forms/open")
+public function runtime_ui_http_open_form(request: Json): Json {
+  let app_id = runtime_ui_http_request_app_identifier(request);
+  let form_id = Runtime.json_to_str(runtime_ui_http_request_value(request, "form_id", "formId"));
+  let open_request = Runtime.json_parse("{}");
+  open_request["app_id"] = app_id;
+  open_request["form_id"] = form_id;
+  open_request["args"] = request["args"] ?? request["payload"];
+  open_request["context"] = request["context"];
+  return runtime_ui_open_form(open_request);
+}
+
+@http(method: POST, path: "/ui/session/open")
+public function runtime_ui_http_session_open(request: Json): Json {
+  let session_open_request = Runtime.json_parse("{}");
+  session_open_request["app_id"] = runtime_ui_http_request_app_identifier(request);
+  session_open_request["form_id"] = Runtime.json_to_str(
+    runtime_ui_http_request_value(request, "form_id", "formId")
+  );
+  session_open_request["args"] = request["args"] ?? request["payload"];
+  session_open_request["context"] = request["context"];
+  session_open_request["defer_data_load"] = request["defer_data_load"] ?? request["deferDataLoad"];
+  let open_response = runtime_ui_session_open(session_open_request);
+  return runtime_ui_http_attach_object_guard_acquire_result(
+    request,
+    Runtime.json_to_str(open_response["session_id"]),
+    Runtime.json_to_str(open_response["form_instance_id"]),
+    request["context"],
+    open_response
+  );
+}
+
+@http(method: POST, path: "/ui/session/resume")
+public function runtime_ui_http_session_resume(request: Json): Json {
+  let session_resume_request = runtime_ui_build_http_active_form_request_base(request);
+  return runtime_ui_session_resume(session_resume_request);
+}
+
+@http(method: POST, path: "/ui/apply")
+public function runtime_ui_http_apply(request: Json): Json {
+  let apply_request = runtime_ui_build_http_active_form_request_base(request);
+  let state_sync = request["state_sync"] ?? {};
+  let form_state = state_sync["form"];
+  let ui_state = state_sync["uiState"];
+  apply_request["state_sync"] = {
+    "form": form_state,
+    "uiState": ui_state
+  };
+  apply_request["event"] = request["event"] ?? {
+    "context": request["context"],
+    "control_id": Runtime.json_to_str(
+      runtime_ui_http_request_value(request, "control_id", "controlId")
+    ),
+    "event_name": Runtime.json_to_str(
+      runtime_ui_http_request_value(request, "event_name", "eventName")
+    ),
+    "payload": request["payload"]
+  };
+  apply_request["context"] = request["context"];
+  runtime_ui_http_require_object_guard_apply_owner(request, apply_request);
+  return runtime_ui_apply(apply_request);
+}
+
+@http(method: POST, path: "/ui/session/sync")
+public function runtime_ui_http_session_sync(request: Json): Json {
+  let sync_request = runtime_ui_build_http_active_form_request_base(request);
+  sync_request["state_sync"] = request["state_sync"] ?? request["sync"];
+  let sync_response = runtime_ui_session_sync(sync_request);
+  return runtime_ui_http_attach_object_guard_refresh_result(
+    request,
+    Runtime.json_to_str(sync_response["session_id"]),
+    Runtime.json_to_str(sync_response["form_instance_id"]),
+    request["context"],
+    sync_response
+  );
+}
+
+@http(method: POST, path: "/ui/session/close")
+public function runtime_ui_http_session_close(request: Json): Json {
+  let close_request = runtime_ui_build_http_active_form_request_base(request);
+  let close_response = runtime_ui_session_close(close_request);
+  return runtime_ui_http_attach_object_guard_release_result(
+    request,
+    Runtime.json_to_str(close_response["session_id"]),
+    Runtime.json_to_str(close_response["form_instance_id"]),
+    request["context"],
+    close_response
+  );
+}
+
+@http(method: POST, path: "/ui/events/fire")
+public function runtime_ui_http_fire_event(request: Json): Json {
+  let fire_event_request = runtime_ui_build_http_active_form_request_base(request);
+  let payload = request["payload"];
+  fire_event_request["control_id"] = Runtime.json_to_str(
+    runtime_ui_http_request_value(request, "control_id", "controlId")
+  );
+  fire_event_request["event_name"] = Runtime.json_to_str(
+    runtime_ui_http_request_value(request, "event_name", "eventName")
+  );
+  fire_event_request["state_sync"] = request["state_sync"] ?? request["sync"];
+  fire_event_request["payload"] = payload;
+  fire_event_request["target_form_id"] = runtime_ui_http_request_value(
+    request,
+    "target_form_id",
+    "targetFormId"
+  )
+    ?? (payload != null
+      ? (
+        payload["target_form_id"]
+        ?? payload["targetFormId"]
+        ?? payload["form_id"]
+        ?? payload["form"]
+      )
+      : null);
+  return runtime_ui_fire_event(fire_event_request);
+}
+
+@http(method: POST, path: "/ui/lookup")
+public function runtime_ui_http_lookup(request: Json): Json {
+  let lookup_request = runtime_ui_build_http_active_form_request_base(request);
+  lookup_request["table"] = Runtime.json_to_str(request["table"]);
+  lookup_request["field_name"] = Runtime.json_to_str(request["field"]);
+  lookup_request["query"] = Runtime.json_to_str(request["query"]);
+  lookup_request["origin"] = request["origin"];
+  lookup_request["associated_fields"] = runtime_ui_http_request_value(
+    request,
+    "associated_fields",
+    "associatedFields"
+  );
+  return runtime_ui_lookup(lookup_request);
+}
+
+@http(method: POST, path: "/ui/export")
+public function runtime_ui_http_export(request: Json): Json {
+  let export_request = runtime_ui_build_http_active_form_request_base(request);
+  export_request["format"] = Runtime.json_to_str(request["format"]);
+  export_request["export"] = request["export"] ?? request;
+  return runtime_ui_export(export_request);
+}

@@ -1,0 +1,904 @@
+private function runtime_ui_sync_internal_form_state_binding(
+  form_metadata: Json,
+  internal_state: RuntimeUiInternalFormState
+): RuntimeUiInternalFormState {
+  if (internal_state is null) {
+    return internal_state;
+  }
+  internal_state["binding_key_fields"] = runtime_ui_build_binding_key_fields(form_metadata);
+  if (Runtime.json_to_str(internal_state.binding_type) != "") {
+    internal_state["binding_state"] = runtime_ui_materialize_form_binding_state(
+      form_metadata,
+      internal_state.state
+    );
+    internal_state["binding_object"] = runtime_ui_build_binding_runtime_object(
+      form_metadata,
+      internal_state.binding_state
+    );
+    let serialized_binding_object_state = internal_state.binding_state;
+    if (internal_state.binding_object != null) {
+      serialized_binding_object_state = runtime_object_serialize(internal_state.binding_object);
+    }
+    internal_state["state"] = runtime_ui_serialize_form_binding_state(
+      form_metadata,
+      internal_state.state,
+      serialized_binding_object_state
+    );
+  } else {
+    internal_state["binding_object"] = null;
+    internal_state["binding_state"] = null;
+  }
+  return internal_state;
+}
+
+private function runtime_ui_resolve_form_load_handler(form_metadata: Json): string {
+  if (form_metadata == null) {
+    return "";
+  }
+
+  let load_metadata = form_metadata["load"];
+  if (load_metadata == null) {
+    return "";
+  }
+
+  let handler = Runtime.json_to_str(load_metadata["handler"]);
+  if (handler != "") {
+    return handler;
+  }
+
+  return "";
+}
+
+private function runtime_ui_resolve_form_load_dispatch_target(form_metadata: Json): string {
+  if (form_metadata == null) {
+    return "";
+  }
+
+  let load_metadata = form_metadata["load"];
+  if (load_metadata == null) {
+    return "";
+  }
+
+  let dispatch_target = Runtime.json_to_str(load_metadata["dispatch_target"]);
+  if (dispatch_target != "") {
+    return dispatch_target;
+  }
+
+  return "";
+}
+
+private function runtime_ui_dispatch_target_requires_handler(dispatch_target: string): bool {
+  let normalized_dispatch_target = Runtime.json_to_str(dispatch_target);
+  return normalized_dispatch_target == ""
+    || normalized_dispatch_target == runtime_ui_dispatch_wrapper_target();
+}
+
+private function runtime_ui_execute_form_load(
+  form_metadata: Json,
+  internal_form_state: RuntimeUiInternalFormState,
+  session_id: string,
+  form_instance_id: string,
+  app_id: string,
+  form_id: string,
+  revision: int,
+  load_handler: string
+): RuntimeUiApplyExecutionResult? {
+  let load_dispatch_target = runtime_ui_resolve_form_load_dispatch_target(form_metadata);
+  if (load_dispatch_target == "") {
+    load_dispatch_target = load_handler;
+  }
+  let execution_context = runtime_ui_build_apply_execution_context(
+    session_id,
+    form_instance_id,
+    app_id,
+    form_id,
+    revision,
+    form_id,
+    "Form",
+    "load",
+    load_handler,
+    load_dispatch_target,
+    internal_form_state.binding_type,
+    internal_form_state.binding_kind,
+    internal_form_state.binding_key_fields,
+    internal_form_state.binding_state,
+    runtime_ui_build_execution_handler_input(
+      form_metadata,
+      internal_form_state,
+      "load"
+    ),
+    runtime_ui_build_execution_form_state(form_metadata, internal_form_state),
+    runtime_ui_build_execution_event(
+      form_metadata,
+      internal_form_state,
+      {
+      "event": "load",
+      "context": {
+        "controlId": form_id,
+        "source": "form"
+      }
+      }
+    )
+  );
+  return runtime_ui_dispatch_handler(execution_context);
+}
+
+private function runtime_ui_build_default_limiter_state(): Json {
+  return {
+    "page": 1,
+    "size": null,
+    "total_count": 0,
+    "search_text": ""
+  };
+}
+
+private function runtime_ui_build_default_state_field_value(state_field: Json): Json {
+  if (state_field == null) {
+    return null;
+  }
+
+  let value_type = Runtime.json_to_str(state_field["value_type"]);
+
+  if (value_type == "Limiter") {
+    return runtime_ui_build_default_limiter_state();
+  }
+
+  return null;
+}
+
+private function runtime_ui_build_session_id(app_id: string, session_context: Json): string {
+  let session_scope_suffix = runtime_ui_build_session_scope_suffix(session_context);
+  if (session_scope_suffix == "") {
+    return "ui.session." + app_id;
+  }
+  return "ui.session." + app_id + "." + session_scope_suffix;
+}
+
+private function runtime_ui_build_form_session_id(
+  app_id: string,
+  form_id: string,
+  session_context: Json
+): string {
+  let session_scope_suffix = runtime_ui_build_session_scope_suffix(session_context);
+  if (session_scope_suffix == "") {
+    return "ui.form." + app_id + "." + form_id;
+  }
+  return "ui.form." + app_id + "." + form_id + "." + session_scope_suffix;
+}
+
+private function runtime_ui_build_apply_state_sync(
+  session_id: string,
+  form_instance_id: string,
+  revision: int,
+  form_metadata: Json,
+  form_state: Json,
+  control_runtime_updates: Json,
+  persisted_ui_state: Json
+): Json {
+  let client_form_state = runtime_ui_build_client_form_state(
+    form_metadata,
+    form_state
+  );
+  return {
+    "session_id": session_id,
+    "form_instance_id": form_instance_id,
+    "revision": revision,
+    "form": client_form_state,
+    "uiState": runtime_ui_build_state_sync_ui_state(
+      form_instance_id,
+      form_metadata,
+      form_state,
+      control_runtime_updates,
+      persisted_ui_state
+    )
+  };
+}
+
+private function runtime_ui_build_execution_form_state(
+  form_metadata: Json,
+  internal_form_state: RuntimeUiInternalFormState
+): Json {
+  if (internal_form_state is null) {
+    return {};
+  }
+
+  if (Runtime.json_to_str(internal_form_state.binding_type) != "") {
+    let binding_object = internal_form_state.binding_object;
+    if (binding_object is null) {
+      binding_object = runtime_ui_cast_binding_runtime_object(
+        form_metadata,
+        internal_form_state.binding_state
+      );
+    }
+    if (binding_object != null) {
+      if (runtime_object_matches_type(binding_object, internal_form_state.binding_type)) {
+        return runtime_object_serialize(binding_object);
+      }
+    }
+    return internal_form_state.binding_state ?? internal_form_state.state ?? {};
+  }
+
+  return internal_form_state.state ?? {};
+}
+
+private function runtime_ui_build_execution_event(
+  form_metadata: Json,
+  internal_form_state: RuntimeUiInternalFormState,
+  event: Json?
+): Json {
+  let normalized_event = event ?? {};
+  if (internal_form_state is null) {
+    return normalized_event;
+  }
+  if (Runtime.json_to_str(internal_form_state.binding_type) == "") {
+    return normalized_event;
+  }
+
+  normalized_event["binding"] = {
+    "type": internal_form_state.binding_type,
+    "kind": internal_form_state.binding_kind,
+    "runtime_object": runtime_ui_build_binding_runtime_inspection(
+      form_metadata,
+      internal_form_state.state
+    ),
+    "state": internal_form_state.binding_state
+      ?? runtime_ui_build_execution_form_state(form_metadata, internal_form_state)
+  };
+  return normalized_event;
+}
+
+private function runtime_ui_resolve_form_load_param_name(form_metadata: Json): string {
+  if (form_metadata == null) {
+    return "";
+  }
+
+  let load_param_name = Runtime.json_to_str(form_metadata["load_param"]);
+  if (load_param_name != "") {
+    return load_param_name;
+  }
+  return "";
+}
+
+private function runtime_ui_resolve_form_load_handler_key_field_input_value(
+  internal_form_state: RuntimeUiInternalFormState,
+  execution_form_state: Json
+): Json {
+  for (binding_key_field in internal_form_state.binding_key_fields ?? []) {
+    let normalized_binding_key_field = Runtime.json_to_str(binding_key_field);
+    if (normalized_binding_key_field == "") {
+      continue;
+    }
+
+    if (internal_form_state.open_args != null) {
+      let open_arg_value = internal_form_state.open_args[normalized_binding_key_field];
+      if (open_arg_value != null) {
+        return open_arg_value;
+      }
+    }
+
+    if (internal_form_state.binding_state != null) {
+      let binding_state_value = internal_form_state.binding_state[normalized_binding_key_field];
+      if (binding_state_value != null) {
+        return binding_state_value;
+      }
+    }
+
+    if (execution_form_state != null) {
+      let execution_state_value = execution_form_state[normalized_binding_key_field];
+      if (execution_state_value != null) {
+        return execution_state_value;
+      }
+    }
+  }
+
+  return null;
+}
+
+private function runtime_ui_resolve_form_load_handler_input_value(
+  form_metadata: Json,
+  internal_form_state: RuntimeUiInternalFormState,
+  load_param_name: string,
+  execution_form_state: Json
+): Json {
+  let normalized_load_param_name = Runtime.json_to_str(load_param_name);
+
+  if (internal_form_state.open_args != null) {
+    if (
+      normalized_load_param_name != ""
+      && internal_form_state.open_args[normalized_load_param_name] != null
+    ) {
+      return internal_form_state.open_args[normalized_load_param_name];
+    }
+  }
+
+  if (internal_form_state.binding_state != null) {
+    if (
+      normalized_load_param_name != ""
+      && internal_form_state.binding_state[normalized_load_param_name] != null
+    ) {
+      return internal_form_state.binding_state[normalized_load_param_name];
+    }
+  }
+
+  if (execution_form_state != null) {
+    if (
+      normalized_load_param_name != ""
+      && execution_form_state[normalized_load_param_name] != null
+    ) {
+      return execution_form_state[normalized_load_param_name];
+    }
+  }
+
+  return null;
+}
+
+private function runtime_ui_build_execution_handler_input(
+  form_metadata: Json,
+  internal_form_state: RuntimeUiInternalFormState,
+  event_name: string
+): Json {
+  if (internal_form_state is null) {
+    return {};
+  }
+
+  let normalized_event_name = Runtime.json_to_str(event_name);
+  let execution_form_state = runtime_ui_build_execution_form_state(
+    form_metadata,
+    internal_form_state
+  );
+  if (normalized_event_name == "load") {
+    let load_param_name = runtime_ui_resolve_form_load_param_name(form_metadata);
+    let load_input_value = runtime_ui_resolve_form_load_handler_input_value(
+      form_metadata,
+      internal_form_state,
+      load_param_name,
+      execution_form_state
+    );
+    if (load_input_value == null) {
+      load_input_value = runtime_ui_resolve_form_load_handler_key_field_input_value(
+        internal_form_state,
+        execution_form_state
+      );
+    }
+    if (load_input_value != null) {
+      return load_input_value;
+    }
+    if (runtime_ui_binding_has_key_fields(form_metadata)) {
+      raise runtime_ui_form_load_key_input_required;
+    }
+    if (internal_form_state.open_args != null) {
+      return internal_form_state.open_args;
+    }
+  }
+
+  if (internal_form_state.binding_state != null) {
+    return internal_form_state.binding_state;
+  }
+
+  return execution_form_state;
+}
+
+private function runtime_ui_apply_execution_result_to_internal_form_state(
+  form_metadata: Json,
+  internal_form_state: RuntimeUiInternalFormState,
+  execution_result: RuntimeUiApplyExecutionResult?
+): RuntimeUiInternalFormState {
+  if (internal_form_state is null || execution_result is null) {
+    return internal_form_state;
+  }
+
+  internal_form_state["state"] = execution_result.form_state ?? internal_form_state.state;
+  if (
+    Runtime.json_to_str(internal_form_state.binding_type) != ""
+    && execution_result.binding_state != null
+  ) {
+    internal_form_state["binding_state"] = execution_result.binding_state;
+    internal_form_state["binding_object"] = runtime_ui_build_binding_runtime_object(
+      form_metadata,
+      internal_form_state.binding_state
+    );
+    let serialized_binding_object_state = internal_form_state.binding_state;
+    if (internal_form_state.binding_object != null) {
+      serialized_binding_object_state = runtime_object_serialize(internal_form_state.binding_object);
+    }
+    internal_form_state["state"] = runtime_ui_serialize_form_binding_state(
+      form_metadata,
+      internal_form_state.state,
+      serialized_binding_object_state
+    );
+    return internal_form_state;
+  }
+
+  return runtime_ui_sync_internal_form_state_binding(form_metadata, internal_form_state);
+}
+
+private function runtime_ui_build_apply_execution_context(
+  session_id: string,
+  form_instance_id: string,
+  app_id: string,
+  form_id: string,
+  revision: int,
+  control_id: string,
+  control_kind: string,
+  event_name: string,
+  handler: string,
+  dispatch_target: string,
+  binding_type: string,
+  binding_kind: string,
+  binding_key_fields: Json,
+  binding_state: Json,
+  handler_input: Json,
+  form_state: Json,
+  event: Json
+): RuntimeUiApplyExecutionContext {
+  let context = Runtime.json_parse("{}");
+  context["session_id"] = session_id;
+  context["form_instance_id"] = form_instance_id;
+  context["app_id"] = app_id;
+  context["form_id"] = form_id;
+  context["revision"] = revision;
+  context["control_id"] = control_id;
+  context["control_kind"] = control_kind;
+  context["event_name"] = event_name;
+  context["handler"] = handler;
+  context["dispatch_target"] = dispatch_target;
+  context["binding_type"] = binding_type;
+  context["binding_kind"] = binding_kind;
+  context["binding_key_fields"] = binding_key_fields;
+  context["binding_state"] = binding_state;
+  context["handler_input"] = handler_input;
+  context["form_state"] = form_state;
+  context["event"] = event;
+  return context;
+}
+
+private function runtime_ui_resolve_apply_event_name(event: Json): string {
+  if (event == null) {
+    return "";
+  }
+
+  let event_name = Runtime.json_to_str(event["event_name"]);
+  if (event_name != "") {
+    return event_name;
+  }
+
+  event_name = Runtime.json_to_str(event["name"]);
+  if (event_name != "") {
+    return event_name;
+  }
+
+  let context = event["context"];
+  if (context != null) {
+    event_name = Runtime.json_to_str(context["eventName"]);
+    if (event_name != "") {
+      return event_name;
+    }
+    event_name = Runtime.json_to_str(context["event_name"]);
+    if (event_name != "") {
+      return event_name;
+    }
+  }
+  return "";
+}
+
+private function runtime_ui_resolve_apply_event_handler(event: Json): string {
+  if (event == null) {
+    return "";
+  }
+
+  let handler = Runtime.json_to_str(event["handler"]);
+  if (handler != "") {
+    return handler;
+  }
+
+  handler = Runtime.json_to_str(event["original_handler"]);
+  if (handler != "") {
+    return handler;
+  }
+  let payload = event["payload"];
+  if (payload != null) {
+    handler = Runtime.json_to_str(payload["original_handler"]);
+    if (handler != "") {
+      return handler;
+    }
+  }
+  return "";
+}
+
+private function runtime_ui_resolve_apply_event_dispatch_target(event: Json): string {
+  if (event == null) {
+    return "";
+  }
+
+  let dispatch_target = Runtime.json_to_str(event["dispatch_target"]);
+  if (dispatch_target != "") {
+    return dispatch_target;
+  }
+
+  return "";
+}
+
+private function runtime_ui_build_apply_dispatch_event(
+  form_metadata: Json,
+  internal_form_state: RuntimeUiInternalFormState,
+  event: Json?
+): Json {
+  let structural_event: Json = {};
+  let event_payload = null;
+  if (event != null) {
+    if (event["context"] != null) {
+      structural_event["context"] = event["context"];
+    }
+    if (event["payload"] != null) {
+      event_payload = event["payload"];
+      structural_event["payload"] = event_payload;
+    }
+    if (event["form"] != null) {
+      structural_event["form"] = event["form"];
+    }
+    if (event["form_id"] != null) {
+      structural_event["form_id"] = event["form_id"];
+    }
+    if (event["target_form_id"] != null) {
+      structural_event["target_form_id"] = event["target_form_id"];
+    }
+    if (event["targetFormId"] != null) {
+      structural_event["targetFormId"] = event["targetFormId"];
+    }
+    if (event_payload != null) {
+      if (structural_event["form"] == null && event_payload["form"] != null) {
+        structural_event["form"] = event_payload["form"];
+      }
+      if (structural_event["form_id"] == null && event_payload["form_id"] != null) {
+        structural_event["form_id"] = event_payload["form_id"];
+      }
+      if (
+        structural_event["target_form_id"] == null
+        && event_payload["target_form_id"] != null
+      ) {
+        structural_event["target_form_id"] = event_payload["target_form_id"];
+      }
+      if (
+        structural_event["targetFormId"] == null
+        && event_payload["targetFormId"] != null
+      ) {
+        structural_event["targetFormId"] = event_payload["targetFormId"];
+      }
+    }
+  }
+
+  return runtime_ui_build_execution_event(
+    form_metadata,
+    internal_form_state,
+    structural_event
+  );
+}
+
+private function runtime_ui_resolve_apply_event_control_id(event: Json): string {
+  if (event == null) {
+    return "";
+  }
+
+  let control_id = Runtime.json_to_str(event["control_id"]);
+  if (control_id != "") {
+    return control_id;
+  }
+
+  control_id = Runtime.json_to_str(event["controlId"]);
+  if (control_id != "") {
+    return control_id;
+  }
+
+  let context = event["context"];
+  if (context != null) {
+    control_id = Runtime.json_to_str(context["controlId"]);
+    if (control_id != "") {
+      return control_id;
+    }
+    control_id = Runtime.json_to_str(context["control_id"]);
+    if (control_id != "") {
+      return control_id;
+    }
+  }
+
+  return "";
+}
+
+private function runtime_ui_build_apply_execution_messages(
+  session_id: string,
+  form_instance_id: string,
+  app_id: string,
+  form_id: string,
+  revision: int
+): Json {
+  let messages: Json = [];
+
+  if (session_id == "" || form_instance_id == "" || app_id == "" || form_id == "") {
+    return messages;
+  }
+
+  messages[0] = {
+    "kind": "runtime_ui.execution",
+    "session_id": session_id,
+    "form_instance_id": form_instance_id,
+    "app_id": app_id,
+    "form_id": form_id,
+    "revision": revision,
+    "status": "applied"
+  };
+  return messages;
+}
+
+private function runtime_ui_ensure_apply_execution_message(
+  messages: Json,
+  session_id: string,
+  form_instance_id: string,
+  app_id: string,
+  form_id: string,
+  revision: int
+): Json {
+  let normalized_messages = messages ?? [];
+
+  for (message in normalized_messages) {
+    if (
+      Runtime.json_to_str(message["kind"]) == "runtime_ui.execution"
+      && Runtime.json_to_str(message["session_id"]) == session_id
+      && Runtime.json_to_str(message["form_instance_id"]) == form_instance_id
+      && Runtime.json_to_str(message["app_id"]) == app_id
+      && Runtime.json_to_str(message["form_id"]) == form_id
+      && Runtime.json_to_str(message["status"]) == "applied"
+    ) {
+      return normalized_messages;
+    }
+  }
+
+  let next_messages: Json = [];
+  let next_message_count = 0;
+  for (message in normalized_messages) {
+    next_messages[next_message_count] = message;
+    next_message_count = next_message_count + 1;
+  }
+  next_messages[next_message_count] = runtime_ui_build_apply_execution_messages(
+    session_id,
+    form_instance_id,
+    app_id,
+    form_id,
+    revision
+  )[0];
+  return next_messages;
+}
+
+private function runtime_ui_build_form_binding_blueprint(form_metadata: Json): Json {
+  if (form_metadata != null && form_metadata["binding_blueprint"] != null) {
+    return form_metadata["binding_blueprint"];
+  }
+  let binding_type = runtime_ui_resolve_form_binding_type(form_metadata);
+  let binding_kind = runtime_ui_resolve_form_binding_kind(form_metadata);
+  let blueprint: Json = {
+    "form": {
+      "kind": "root",
+      "binding_type": binding_type,
+      "binding_kind": binding_kind
+    },
+    "state": {
+      "kind": "root",
+      "binding_type": binding_type,
+      "binding_kind": binding_kind
+    }
+  };
+  if (form_metadata == null) {
+    return blueprint;
+  }
+
+  let state_fields = form_metadata["state_fields"] ?? [];
+  for (state_field in state_fields) {
+    let field_name = Runtime.json_to_str(state_field["name"]);
+    if (field_name == "") {
+      continue;
+    }
+    blueprint["form." + field_name] = {
+      "kind": "field",
+      "field_name": field_name
+    };
+    blueprint["state." + field_name] = {
+      "kind": "field",
+      "field_name": field_name
+    };
+  }
+
+  let binding_members = runtime_ui_build_binding_members(form_metadata);
+  for (binding_member in binding_members) {
+    let field_name = Runtime.json_to_str(binding_member["field_name"]);
+    if (field_name == "") {
+      continue;
+    }
+    if (blueprint["form." + field_name] == null) {
+      blueprint["form." + field_name] = binding_member;
+    }
+    if (blueprint["state." + field_name] == null) {
+      blueprint["state." + field_name] = binding_member;
+    }
+  }
+
+  return blueprint;
+}
+
+private function runtime_ui_materialize_form_binding_state(
+  form_metadata: Json,
+  form_state: Json
+): Json {
+  let normalized_form_state = form_state ?? {};
+  let binding_type = runtime_ui_resolve_form_binding_type(form_metadata);
+  if (binding_type == "") {
+    return null;
+  }
+
+  let binding_state: Json = {};
+  let binding_members = runtime_ui_build_binding_members(form_metadata);
+  for (binding_member in binding_members) {
+    let field_name = Runtime.json_to_str(binding_member["field_name"]);
+    if (field_name == "") {
+      continue;
+    }
+    binding_state[field_name] = normalized_form_state[field_name];
+  }
+
+  let state_fields = form_metadata["state_fields"] ?? [];
+  for (state_field in state_fields) {
+    let field_name = Runtime.json_to_str(state_field["name"]);
+    if (field_name == "") {
+      continue;
+    }
+    if (binding_state[field_name] == null && normalized_form_state[field_name] != null) {
+      binding_state[field_name] = normalized_form_state[field_name];
+    }
+  }
+
+  return binding_state;
+}
+
+private function runtime_ui_build_form_state_binding_object(
+  form_metadata: Json,
+  form_state: Json
+): RuntimeObject? {
+  if (form_state == null || runtime_ui_resolve_form_binding_type(form_metadata) == "") {
+    return null;
+  }
+
+  return runtime_ui_cast_binding_runtime_object(
+    form_metadata,
+    runtime_ui_materialize_form_binding_state(form_metadata, form_state)
+  );
+}
+
+private function runtime_ui_serialize_form_binding_state(
+  form_metadata: Json,
+  form_state: Json,
+  binding_state: Json
+): Json {
+  let binding_type = runtime_ui_resolve_form_binding_type(form_metadata);
+  if (binding_type == "") {
+    return form_state ?? {};
+  }
+
+  let next_form_state = form_state ?? {};
+  let normalized_binding_state = binding_state ?? {};
+  let binding_members = runtime_ui_build_binding_members(form_metadata);
+  for (binding_member in binding_members) {
+    let field_name = Runtime.json_to_str(binding_member["field_name"]);
+    if (field_name == "") {
+      continue;
+    }
+    next_form_state[field_name] = normalized_binding_state[field_name];
+  }
+
+  let state_fields = form_metadata["state_fields"] ?? [];
+  for (state_field in state_fields) {
+    let field_name = Runtime.json_to_str(state_field["name"]);
+    if (field_name == "") {
+      continue;
+    }
+    if (normalized_binding_state[field_name] != null) {
+      next_form_state[field_name] = normalized_binding_state[field_name];
+    }
+  }
+
+  return next_form_state;
+}
+
+private function runtime_ui_resolve_form_binding_blueprint_entry(
+  form_metadata: Json,
+  path: string
+): Json {
+  let normalized_path = Runtime.json_to_str(path);
+  if (normalized_path == "") {
+    return null;
+  }
+
+  let blueprint = runtime_ui_build_form_binding_blueprint(form_metadata);
+  return blueprint[normalized_path];
+}
+
+private function runtime_ui_resolve_form_state_path(
+  form_metadata: Json,
+  form_state: Json,
+  path: string
+): Json {
+  return runtime_ui_resolve_form_state_path_with_binding_object(
+    form_metadata,
+    form_state,
+    null,
+    path
+  );
+}
+
+private function runtime_ui_resolve_form_state_path_with_binding_object(
+  form_metadata: Json,
+  form_state: Json,
+  binding_object: RuntimeObject?,
+  path: string
+): Json {
+  if (form_state == null) {
+    return null;
+  }
+
+  let binding_entry = runtime_ui_resolve_form_binding_blueprint_entry(form_metadata, path);
+  if (binding_entry == null) {
+    return null;
+  }
+  let binding_kind = Runtime.json_to_str(binding_entry["kind"]);
+  if (binding_kind == "root") {
+    return form_state;
+  }
+
+  let field_name = Runtime.json_to_str(binding_entry["field_name"]);
+  if (field_name != "") {
+    return form_state[field_name];
+  }
+
+  return null;
+}
+
+private function runtime_ui_assign_form_state_path(
+  form_metadata: Json,
+  form_state: Json,
+  path: string,
+  value: Json
+): Json {
+  let next_form_state = form_state ?? {};
+  let binding_entry = runtime_ui_resolve_form_binding_blueprint_entry(form_metadata, path);
+  if (binding_entry == null) {
+    return next_form_state;
+  }
+  let binding_kind = Runtime.json_to_str(binding_entry["kind"]);
+  if (binding_kind == "root") {
+    return next_form_state;
+  }
+
+  let field_name = Runtime.json_to_str(binding_entry["field_name"]);
+  if (field_name != "") {
+    if (Runtime.json_to_str(binding_entry["kind"]) == "binding_member") {
+      let binding_object = runtime_ui_cast_binding_runtime_object(
+        form_metadata,
+        runtime_ui_materialize_form_binding_state(form_metadata, next_form_state)
+      );
+      if (binding_object is null) {
+        return next_form_state;
+      }
+      let next_binding_object = runtime_object_set_member(
+        binding_object,
+        field_name,
+        value
+      );
+      return runtime_ui_serialize_form_binding_state(
+        form_metadata,
+        next_form_state,
+        runtime_object_serialize(next_binding_object)
+      );
+    }
+    next_form_state[field_name] = value;
+    return next_form_state;
+  }
+
+  return next_form_state;
+}
