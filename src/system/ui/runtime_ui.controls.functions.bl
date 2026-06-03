@@ -207,6 +207,8 @@ private function runtime_ui_build_control_runtime_state_snapshot(
       }
       if (request_runtime_state["pageSize"] != null) {
         runtime_state["page_size"] = request_runtime_state["pageSize"];
+      } else if (request_runtime_state["rowCount"] != null) {
+        runtime_state["page_size"] = request_runtime_state["rowCount"];
       }
       if (request_runtime_state["totalRows"] != null) {
         runtime_state["total_rows"] = request_runtime_state["totalRows"];
@@ -389,6 +391,8 @@ private function runtime_ui_apply_grid_ui_state_to_form_state(
     }
     if (grid_ui_state["pageSize"] != null) {
       pagination_state["size"] = grid_ui_state["pageSize"];
+    } else if (grid_ui_state["rowCount"] != null) {
+      pagination_state["size"] = grid_ui_state["rowCount"];
     }
     if (grid_ui_state["totalRows"] != null) {
       pagination_state["total_count"] = grid_ui_state["totalRows"];
